@@ -67,6 +67,7 @@ interface AuthContextType {
   loginAdmin: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  updateUser: (data: Partial<CustomerUser>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -193,6 +194,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await restoreSession();
   };
 
+  const updateUser = (updatedFields: Partial<CustomerUser>) => {
+    setUser((prev) => {
+      if (!prev || prev.role !== 'CUSTOMER') return prev;
+      return {
+        ...prev,
+        ...updatedFields,
+      };
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -205,6 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginAdmin,
         logout,
         refreshUser,
+        updateUser,
       }}
     >
       {children}

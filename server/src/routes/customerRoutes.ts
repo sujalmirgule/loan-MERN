@@ -1,24 +1,23 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { authenticate, requireCustomer } from '../middleware/authMiddleware';
-import { authService } from '../services/authService';
+import { customerProfileController } from '../controllers/customerProfileController';
+import { documentController } from '../controllers/documentController';
+import { handleUpload } from '../middleware/uploadMiddleware';
 
 const router = Router();
 
 // Apply customer authentication & authorization to all customer endpoints
 router.use(authenticate, requireCustomer);
 
-// GET /api/customers/profile
-router.get('/profile', async (req: Request, res: Response, next) => {
-  try {
-    if (!req.user) {
-      res.status(401).json({ success: false, message: 'Not authenticated' });
-      return;
-    }
-    const profile = await authService.getCurrentUser(req.user.id, 'CUSTOMER');
-    res.status(200).json({ success: true, data: { profile } });
-  } catch (error) {
-    next(error);
-  }
-});
+// --- Profile Endpoints ---
+router.get('/profile', customerProfileController.getProfile);
+router.patch('/profile', customerProfileController.updateProfile);
+
+// --- Document & KYC Endpoints ---
+router.get('/documents', documentController.listDocuments);
+router.post('/documents', handleUpload('file'), documentController.uploadDocument);
+router.get('/documents/:id', documentController.getDocumentMetadata);
+router.get('/documents/:id/file', documentController.streamDocumentFile);
+router.post('/documents/:id/reupload', handleUpload('file'), documentController.reuploadDocument);
 
 export default router;
