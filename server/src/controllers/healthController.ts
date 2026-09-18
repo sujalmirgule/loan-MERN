@@ -1,0 +1,24 @@
+import { Request, Response } from 'express';
+import { prisma } from '../services/db';
+import { config } from '../config';
+
+export async function getHealthCheck(_req: Request, res: Response): Promise<void> {
+  let dbStatus = 'ok';
+  try {
+    // Verify database connectivity by running a lightweight query
+    await prisma.$queryRawUnsafe('SELECT 1;');
+  } catch {
+    dbStatus = 'unhealthy';
+  }
+
+  res.status(dbStatus === 'ok' ? 200 : 503).json({
+    status: dbStatus === 'ok' ? 'ok' : 'degraded',
+    service: 'loan-approve-api',
+    environment: config.NODE_ENV,
+    timestamp: new Date().toISOString(),
+    database: {
+      status: dbStatus,
+      type: 'SQLite',
+    },
+  });
+}

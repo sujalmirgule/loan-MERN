@@ -1,0 +1,320 @@
+// Prisma Schema for Loan Approve Platform
+// Database: SQLite with WAL mode enabled
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// 1. ADMIN USER
+// -------------------------------------------------------------
+model AdminUser {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  role         String    @default("ADMIN")
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  disbursements Disbursement[]
+  auditLogs     AuditLog[]
+}
+
+// -------------------------------------------------------------
+// 2. CUSTOMER
+// -------------------------------------------------------------
+model Customer {
+  id              String    @id @default(uuid())
+  mobile          String    @unique
+  fullName        String
+  email           String
+  address         String
+  state           String
+  city            String
+  aadhaarEncrypted String
+  aadhaarMasked   String
+  monthlyIncome   Float
+  status          String    @default("ACTIVE") // ACTIVE, SUSPENDED, ARCHIVED
+  isDeleted       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  loans           LoanApplication[]
+  documents       LoanDocument[]
+  agreements      LoanAgreement[]
+  disbursements   Disbursement[]
+  emiSchedules    EMISchedule[]
+  payments        Payment[]
+  notifications   Notification[]
+  supportTickets  SupportTicket[]
+
+  @@index([mobile])
+  @@index([email])
+  @@index([state])
+  @@index([city])
+  @@index([createdAt])
+}
+
+// -------------------------------------------------------------
+// 3. LOAN APPLICATION & LOAN
+// -------------------------------------------------------------
+model LoanApplication {
+  id                   String    @id @default(uuid())
+  applicationNumber    String    @unique // e.g. LN-2026-000001
+  customerId           String
+  customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  
+  requestedAmount      Float
+  approvedAmount       Float?
+  
+  interestType         String    @default("PERCENTAGE") // PERCENTAGE, FIXED
+  interestRate         Float     @default(12.0)
+  interestCalcMethod   String    @default("REDUCING_BALANCE") // SIMPLE, REDUCING_BALANCE
+  
+  processingFeeType    String    @default("PERCENTAGE") // PERCENTAGE, FIXED
+  processingFeeValue   Float     @default(2.0)
+  processingFeeAmount  Float     @default(0)
+  
+  tenureMonths         Int
+  estimatedEmi         Float
+  finalEmi             Float?
+  
+  purpose              String?
+  status               String    @default("SUBMITTED") 
+  // DRAFT, SUBMITTED, UNDER_REVIEW, DOCUMENTS_REQUIRED, ON_HOLD, APPROVED, 
+  // CUSTOMER_ACCEPTANCE_REQUIRED, AGREEMENT_PENDING, AGREEMENT_ACCEPTED, 
+  // DISBURSEMENT_PENDING, DISBURSED, ACTIVE, OVERDUE, CLOSED, REJECTED, CANCELLED
+
+  rejectionReason      String?
+  holdReason           String?
+  docRequestReason     String?
+  modifiedOfferAccepted Boolean?
+  
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  documents            LoanDocument[]
+  agreement            LoanAgreement?
+  disbursements        Disbursement[]
+  emiSchedules         EMISchedule[]
+  payments             Payment[]
+
+  @@index([applicationNumber])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// -------------------------------------------------------------
+// 4. LOAN DOCUMENT & KYC
+// -------------------------------------------------------------
+model LoanDocument {
+  id              String           @id @default(uuid())
+  loanId          String?
+  loan            LoanApplication? @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  customerId      String
+  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  
+  documentType    String           // AADHAAR_FRONT, AADHAAR_BACK, PAN, INCOME_PROOF, BANK_STATEMENT, OTHER
+  fileName        String
+  filePath        String
+  fileUrl         String
+  mimeType        String
+  fileSize        Int
+  status          String           @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, REUPLOAD_REQUIRED
+  rejectionReason String?
+  uploadedAt      DateTime         @default(now())
+  reviewedAt      DateTime?
+
+  @@index([customerId])
+  @@index([loanId])
+  @@index([status])
+}
+
+// -------------------------------------------------------------
+// 5. LOAN AGREEMENT
+// -------------------------------------------------------------
+model LoanAgreement {
+  id                   String          @id @default(uuid())
+  loanId               String          @unique
+  loan                 LoanApplication @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  customerId           String
+  customer             Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  
+  agreementVersion     String          @default("v1.0")
+  agreementContentHtml String
+  ipAddress            String?
+  userAgent            String?
+  acceptanceStatus     String          @default("PENDING") // PENDING, ACCEPTED
+  acceptedAt           DateTime?
+  createdAt            DateTime        @default(now())
+
+  @@index([loanId])
+  @@index([customerId])
+}
+
+// -------------------------------------------------------------
+// 6. DISBURSEMENT
+// -------------------------------------------------------------
+model Disbursement {
+  id                String          @id @default(uuid())
+  loanId            String
+  loan              LoanApplication @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  customerId        String
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  
+  amount            Float
+  method            String          // BANK_TRANSFER, UPI
+  referenceId       String          // UTR or Transaction Ref
+  status            String          @default("COMPLETED") // PENDING, COMPLETED, FAILED
+  notes             String?
+  disbursedAt       DateTime        @default(now())
+  
+  createdByAdminId  String?
+  admin             AdminUser?      @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([loanId])
+  @@index([customerId])
+  @@index([referenceId])
+}
+
+// -------------------------------------------------------------
+// 7. EMI SCHEDULE
+// -------------------------------------------------------------
+model EMISchedule {
+  id                String          @id @default(uuid())
+  loanId            String
+  loan              LoanApplication @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  customerId        String
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  
+  installmentNumber Int
+  dueDate           DateTime
+  principalAmount   Float
+  interestAmount    Float
+  totalAmount       Float
+  paidAmount        Float           @default(0)
+  status            String          @default("UPCOMING") // UPCOMING, DUE, PAID, PARTIALLY_PAID, OVERDUE
+  paidAt            DateTime?
+
+  payments          Payment[]
+
+  @@index([loanId])
+  @@index([customerId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+// -------------------------------------------------------------
+// 8. PAYMENT & REPAYMENT
+// -------------------------------------------------------------
+model Payment {
+  id             String          @id @default(uuid())
+  loanId         String
+  loan           LoanApplication @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  customerId     String
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  emiScheduleId  String?
+  emiSchedule    EMISchedule?    @relation(fields: [emiScheduleId], references: [id], onDelete: SetNull)
+  
+  amount         Float
+  paymentMethod  String          // UPI, NET_BANKING, DEBIT_CARD, MOCK
+  transactionRef String          @unique
+  receiptNumber  String          @unique
+  status         String          @default("SUCCESS") // SUCCESS, FAILED, PENDING
+  notes          String?
+  paymentDate    DateTime        @default(now())
+
+  @@index([loanId])
+  @@index([customerId])
+  @@index([transactionRef])
+  @@index([receiptNumber])
+}
+
+// -------------------------------------------------------------
+// 9. NOTIFICATION
+// -------------------------------------------------------------
+model Notification {
+  id            String    @id @default(uuid())
+  recipientType String    // CUSTOMER, ADMIN
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  title         String
+  message       String
+  eventType     String    // REGISTRATION, LOAN_STATUS, EMI_REMINDER, etc.
+  isRead        Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  @@index([recipientType])
+  @@index([customerId])
+  @@index([isRead])
+}
+
+// -------------------------------------------------------------
+// 10. AUDIT LOG (Immutable)
+// -------------------------------------------------------------
+model AuditLog {
+  id            String     @id @default(uuid())
+  actorType     String     // ADMIN, CUSTOMER, SYSTEM
+  actorId       String?
+  admin         AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorName     String
+  action        String     // APPROVE_LOAN, MODIFY_AMOUNT, DISBURSE, etc.
+  entity        String     // LoanApplication, Customer, Document, etc.
+  entityId      String
+  previousValue String?    // JSON stringified before state
+  newValue      String?    // JSON stringified after state
+  ipAddress     String?
+  timestamp     DateTime   @default(now())
+
+  @@index([entity])
+  @@index([entityId])
+  @@index([timestamp])
+}
+
+// -------------------------------------------------------------
+// 11. BRANDING & SYSTEM SETTINGS
+// -------------------------------------------------------------
+model BrandingSettings {
+  id              String   @id @default("default")
+  companyName     String   @default("Loan Approve Financial Services")
+  appName         String   @default("Loan Approve")
+  logoUrl         String?
+  faviconUrl      String?
+  primaryColor    String   @default("#047857")
+  secondaryColor  String   @default("#0f172a")
+  email           String   @default("support@loanapprove.com")
+  phone           String   @default("+91 98765 43210")
+  address         String   @default("Nariman Point, Mumbai, Maharashtra 400021")
+  website         String   @default("https://loanapprove.com")
+  termsUrl        String   @default("https://loanapprove.com/terms")
+  privacyUrl      String   @default("https://loanapprove.com/privacy")
+  updatedAt       DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// 12. SUPPORT TICKET
+// -------------------------------------------------------------
+model SupportTicket {
+  id          String    @id @default(uuid())
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  subject     String
+  message     String
+  status      String    @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED
+  adminReply  String?
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  @@index([customerId])
+  @@index([status])
+}
