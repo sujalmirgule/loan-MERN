@@ -8,8 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run --pool=threads --poolOptions.threads.singleThread=true"
   },
+
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
     "@tanstack/react-query": "^5.62.8",

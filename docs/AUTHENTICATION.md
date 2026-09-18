@@ -17,7 +17,8 @@ Only two distinct roles exist on the platform:
 1. Borrower submits: Full Name, Mobile Number (10 digits), Email Address, Residential Address, State, City, Aadhaar Number (12 digits), and Monthly Income.
 2. System checks for duplicate mobile numbers. If an active or archived record exists, returns HTTP 409 (`Mobile number already registered`).
 3. State and City are validated against the official Indian state-city dataset.
-4. Aadhaar is encrypted using HMAC-SHA256 for duplicate tracking and masked (`XXXX XXXX 1234`) for display. Full Aadhaar is never exposed in API payloads or JWT tokens.
+4. Aadhaar is cryptographically hashed using HMAC-SHA256 (keyed with server secret) for zero-knowledge duplicate tracking without storing reversible plaintext, and masked (`XXXX XXXX 1234`) for display. Full plain-text Aadhaar is never stored in the database, logged, or exposed in API payloads or JWT tokens.
+
 5. Customer status defaults to `ACTIVE` with `isDeleted = false`.
 6. System records a `CUSTOMER_REGISTER` audit entry.
 7. System generates a signed JWT token containing `{ sub: customerId, role: "CUSTOMER" }` and returns it alongside safe profile information.

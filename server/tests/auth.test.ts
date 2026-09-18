@@ -10,6 +10,7 @@ describe('Authentication & Authorization Suite', () => {
   const inactiveCustomerMobile = '9876543212';
   const testAdminEmail = 'testadmin@loanapprove.com';
   const testAdminPassword = 'AdminSecret@2026';
+  const inactiveAdminEmail = 'inactiveadmin@loanapprove.com';
 
   let customerToken: string;
   let adminToken: string;
@@ -23,10 +24,10 @@ describe('Authentication & Authorization Suite', () => {
       },
     });
     await prisma.adminUser.deleteMany({
-      where: { email: testAdminEmail },
+      where: { email: { in: [testAdminEmail, inactiveAdminEmail] } },
     });
 
-    // Create a seeded admin for tests
+    // Create a seeded active admin for tests
     const passwordHash = await bcrypt.hash(testAdminPassword, 10);
     await prisma.adminUser.create({
       data: {
@@ -35,6 +36,17 @@ describe('Authentication & Authorization Suite', () => {
         fullName: 'Test Admin User',
         role: 'ADMIN',
         isActive: true,
+      },
+    });
+
+    // Create a seeded inactive admin for tests
+    await prisma.adminUser.create({
+      data: {
+        email: inactiveAdminEmail,
+        passwordHash,
+        fullName: 'Inactive Admin User',
+        role: 'ADMIN',
+        isActive: false,
       },
     });
 
@@ -64,7 +76,7 @@ describe('Authentication & Authorization Suite', () => {
       },
     });
     await prisma.adminUser.deleteMany({
-      where: { email: testAdminEmail },
+      where: { email: { in: [testAdminEmail, inactiveAdminEmail] } },
     });
   });
 
@@ -135,6 +147,28 @@ describe('Authentication & Authorization Suite', () => {
       expect(res.body.message).toContain('Validation failed');
       expect(res.body.errors).toBeDefined();
     });
+
+    it('blocks mass assignment by rejecting unexpected or privileged fields with HTTP 400', async () => {
+      const res = await request(app)
+        .post('/api/auth/customer/register')
+        .send({
+          fullName: 'Hacker Attempt',
+          mobile: duplicateMobile,
+          email: 'hacker@example.com',
+          address: '404 Insecure Way',
+          state: 'Maharashtra',
+          city: 'Mumbai',
+          aadhaar: '123456789099',
+          monthlyIncome: 50000,
+          role: 'ADMIN',
+          isAdmin: true,
+          isActive: true,
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain('Validation failed');
+    });
   });
 
   describe('2. Customer Login', () => {
@@ -168,6 +202,15 @@ describe('Authentication & Authorization Suite', () => {
       expect(res.status).toBe(403);
       expect(res.body.success).toBe(false);
       expect(res.body.message).toContain('deactivated or suspended');
+    });
+
+    it('rejects invalid mobile number format with HTTP 400', async () => {
+      const res = await request(app)
+        .post('/api/auth/customer/login')
+        .send({ mobile: '12345' }); // Invalid format / length
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
     });
   });
 
@@ -215,12 +258,43 @@ describe('Authentication & Authorization Suite', () => {
       expect(res.body.success).toBe(false);
       expect(res.body.message).toBe('Invalid email or password.');
     });
+
+    it('returns HTTP 401 when attempting to log in as deactivated admin', async () => {
+      const res = await request(app)
+        .post('/api/auth/admin/login')
+        .send({
+          email: inactiveAdminEmail,
+          password: testAdminPassword,
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('Invalid email or password.');
+    });
   });
 
   describe('4. Role-Based Authorization & Protected Endpoints', () => {
     it('returns HTTP 401 for unauthenticated access to /api/auth/me', async () => {
       const res = await request(app).get('/api/auth/me');
       expect(res.status).toBe(401);
+    });
+
+    it('returns HTTP 401 for malformed token', async () => {
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer not-a-valid-jwt-token');
+
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('returns HTTP 401 for missing Bearer scheme', async () => {
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Basic dGVzdA==');
+
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
     });
 
     it('returns current customer identity from /api/auth/me', async () => {

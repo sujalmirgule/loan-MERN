@@ -5,11 +5,13 @@ export const globalLimiter = rateLimit({
   max: 300, // Limit each IP to 300 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/health' || req.baseUrl === '/api/health' || req.originalUrl?.startsWith('/api/health'),
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again after 15 minutes',
   },
 });
+
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes

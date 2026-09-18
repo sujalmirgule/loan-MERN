@@ -10,7 +10,8 @@ The platform consists of two principal application tiers:
 - **CORS Protection**: Restricted to authorized origins (`CLIENT_URL`) with credentials enabled.
 - **Rate Limiting**: Baseline rate limiting (300 requests / 15 min globally, 20 requests / 15 min for auth endpoints).
 - **Error Sanitization**: Centralized `errorHandler` blocks raw database queries or stack traces from reaching clients in production mode.
-- **Data Privacy**: Aadhaar numbers are stored encrypted and displayed strictly masked (`XXXX XXXX 1234`).
+- **Data Privacy**: Aadhaar numbers are deduplicated using HMAC-SHA256 cryptographic digests and displayed strictly masked (`XXXX XXXX 1234`), ensuring zero exposure of raw Aadhaar numbers.
+
 
 ## 3. Database Entities (12 Normalized Models)
 1. `AdminUser`: Administrative credentials and access control.

@@ -71,8 +71,8 @@ export const CustomerRegister: React.FC = () => {
       state: '',
       city: '',
       aadhaar: '',
-      monthlyIncome: '' as unknown as number,
     },
+
   });
 
   const handleStateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
