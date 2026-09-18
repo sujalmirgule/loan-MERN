@@ -42,12 +42,14 @@ model Customer {
   aadhaarMasked   String
   monthlyIncome   Float
   status          String    @default("ACTIVE") // ACTIVE, SUSPENDED, ARCHIVED
+  kycStatus       String    @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, REUPLOAD_REQUIRED
   isDeleted       Boolean   @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   loans           LoanApplication[]
   documents       LoanDocument[]
+  documentRequests DocumentRequest[]
   agreements      LoanAgreement[]
   disbursements   Disbursement[]
   emiSchedules    EMISchedule[]
@@ -59,6 +61,7 @@ model Customer {
   @@index([email])
   @@index([state])
   @@index([city])
+  @@index([kycStatus])
   @@index([createdAt])
 }
 
@@ -116,25 +119,53 @@ model LoanApplication {
 // 4. LOAN DOCUMENT & KYC
 // -------------------------------------------------------------
 model LoanDocument {
-  id              String           @id @default(uuid())
-  loanId          String?
-  loan            LoanApplication? @relation(fields: [loanId], references: [id], onDelete: SetNull)
-  customerId      String
-  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  id               String           @id @default(uuid())
+  loanId           String?
+  loan             LoanApplication? @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  customerId       String
+  customer         Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
   
-  documentType    String           // AADHAAR_FRONT, AADHAAR_BACK, PAN, INCOME_PROOF, BANK_STATEMENT, OTHER
-  fileName        String
-  filePath        String
-  fileUrl         String
-  mimeType        String
-  fileSize        Int
-  status          String           @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, REUPLOAD_REQUIRED
-  rejectionReason String?
-  uploadedAt      DateTime         @default(now())
-  reviewedAt      DateTime?
+  documentType     String           // AADHAAR_FRONT, AADHAAR_BACK, PAN, INCOME_PROOF, BANK_STATEMENT, OTHER
+  fileName         String           // Display filename
+  originalFileName String           @default("")
+  storageKey       String           @default("")
+  filePath         String
+  fileUrl          String
+  mimeType         String
+  fileSize         Int
+  status           String           @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, REUPLOAD_REQUIRED
+  rejectionReason  String?
+  version          Int              @default(1)
+  isCurrentVersion Boolean          @default(true)
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  uploadedAt       DateTime         @default(now())
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @default(now()) @updatedAt
 
   @@index([customerId])
   @@index([loanId])
+  @@index([documentType])
+  @@index([status])
+  @@index([isCurrentVersion])
+}
+
+// -------------------------------------------------------------
+// 4b. DOCUMENT REQUEST (Admin initiated)
+// -------------------------------------------------------------
+model DocumentRequest {
+  id           String    @id @default(uuid())
+  customerId   String
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  documentType String    // e.g. OTHER, BANK_STATEMENT, etc.
+  title        String
+  description  String?
+  status       String    @default("PENDING") // PENDING, FULFILLED, CANCELLED
+  requestedBy  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([customerId])
   @@index([status])
 }
 

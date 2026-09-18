@@ -23,6 +23,13 @@ interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
 }
 
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  message?: string;
+  data: T;
+  errors?: Array<{ field?: string; message: string }>;
+}
+
 export async function apiClient<T>(
   endpoint: string,
   options: RequestOptions = {}
@@ -44,8 +51,10 @@ export async function apiClient<T>(
     }
   }
 
+  const isFormData = typeof FormData !== 'undefined' && customConfig.body instanceof FormData;
+
   const reqHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(headers as Record<string, string>),
   };
 
@@ -78,9 +87,28 @@ export async function apiClient<T>(
   try {
     const response = await fetch(url, config);
 
+    // Handle blob / binary responses
+    const contentType = response.headers.get('content-type') || '';
+    if (customConfig.cache === 'no-store' && !contentType.includes('application/json')) {
+      // Return raw response for streams
+      return response as unknown as T;
+    }
+
     // Handle 204 No Content
     if (response.status === 204) {
-      return {} as T;
+      return { data: {} } as unknown as T;
+    }
+
+    // If client requested blob
+    if ((options as { responseType?: string }).responseType === 'blob') {
+      const blob = await response.blob();
+      return {
+        data: blob,
+        headers: {
+          'content-type': response.headers.get('content-type') || 'application/octet-stream',
+          'content-disposition': response.headers.get('content-disposition') || '',
+        },
+      } as unknown as T;
     }
 
     const data = await response.json().catch(() => null);
@@ -99,7 +127,13 @@ export async function apiClient<T>(
       throw new ApiError(response.status, errorMessage, data?.errors);
     }
 
-    return data as T;
+    // Wrap in { data } structure to support both data.field and res.data
+    const wrapped = {
+      ...data,
+      data,
+    };
+
+    return wrapped as T;
   } catch (err: unknown) {
     if (err instanceof ApiError) {
       throw err;
@@ -108,3 +142,34 @@ export async function apiClient<T>(
     throw new ApiError(500, message);
   }
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+apiClient.get = async (endpoint: string, options?: RequestOptions & { responseType?: string }): Promise<any> => {
+  return apiClient<any>(endpoint, { ...options, method: 'GET' });
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+apiClient.post = async (endpoint: string, body?: unknown, options?: RequestOptions): Promise<any> => {
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  return apiClient<any>(endpoint, {
+    ...options,
+    method: 'POST',
+    body: isFormData ? (body as FormData) : JSON.stringify(body),
+  });
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+apiClient.patch = async (endpoint: string, body?: unknown, options?: RequestOptions): Promise<any> => {
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  return apiClient<any>(endpoint, {
+    ...options,
+    method: 'PATCH',
+    body: isFormData ? (body as FormData) : JSON.stringify(body),
+  });
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+apiClient.delete = async (endpoint: string, options?: RequestOptions): Promise<any> => {
+  return apiClient<any>(endpoint, { ...options, method: 'DELETE' });
+};
+
