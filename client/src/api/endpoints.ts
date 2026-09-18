@@ -1,16 +1,20 @@
 export const API_ENDPOINTS = {
   HEALTH: '/health',
   AUTH: {
-    CUSTOMER_LOGIN: '/auth/customer/login',
     CUSTOMER_REGISTER: '/auth/customer/register',
+    CUSTOMER_LOGIN: '/auth/customer/login',
     ADMIN_LOGIN: '/auth/admin/login',
-    VERIFY: '/auth/verify',
+    ME: '/auth/me',
+    LOGOUT: '/auth/logout',
   },
   CUSTOMERS: {
     PROFILE: '/customers/profile',
     UPDATE: '/customers/profile',
     LIST: '/admin/customers',
     DETAIL: (id: string) => `/admin/customers/${id}`,
+  },
+  ADMIN: {
+    STATUS: '/admin/status',
   },
   LOANS: {
     APPLY: '/loans/apply',

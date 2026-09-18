@@ -11,6 +11,7 @@ const configSchema = z.object({
   CLIENT_URL: z.string().default('http://localhost:5173'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
+  JWT_EXPIRES_IN: z.string().default('7d'),
   ADMIN_EMAIL: z.string().email().default('admin@loanapprove.com'),
   ADMIN_PASSWORD: z.string().min(6).default('Admin@123456'),
   UPLOAD_DIR: z.string().default('./uploads'),

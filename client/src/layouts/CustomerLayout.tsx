@@ -1,10 +1,19 @@
 import React from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Home, FileText, CreditCard, Folder, Bell, User, Landmark } from 'lucide-react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Home, FileText, CreditCard, Folder, Bell, User, Landmark, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
 
 export const CustomerLayout: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/customer/login', { replace: true });
+  };
 
   const navItems = [
     { label: 'Home', path: '/customer/dashboard', icon: Home },
@@ -32,6 +41,15 @@ export const CustomerLayout: React.FC = () => {
           </Link>
 
           <div className="flex items-center space-x-3">
+            {user && (
+              <div className="hidden sm:flex flex-col text-right">
+                <span className="text-xs font-semibold text-slate-900">{user.fullName}</span>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {'mobile' in user ? `+91 ${user.mobile}` : user.email}
+                </span>
+              </div>
+            )}
+
             <Link
               to="/customer/notifications"
               className="relative p-2 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
@@ -40,6 +58,17 @@ export const CustomerLayout: React.FC = () => {
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-600"></span>
             </Link>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="text-xs text-slate-600 hover:text-destructive hover:bg-red-50 p-2 h-8"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden md:inline ml-1.5">Sign Out</span>
+            </Button>
           </div>
         </div>
       </header>
@@ -49,7 +78,7 @@ export const CustomerLayout: React.FC = () => {
         <Outlet />
       </main>
 
-      {/* Mobile Bottom Navigation Bar (Part 2 & Part 22 UX) */}
+      {/* Mobile Bottom Navigation Bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border md:hidden py-1.5 px-2 flex justify-around items-center shadow-lg">
         {navItems.map((item) => {
           const Icon = item.icon;

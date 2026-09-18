@@ -19,7 +19,7 @@ export class ApiError extends Error {
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 interface RequestOptions extends RequestInit {
-  tokenType?: 'customer' | 'admin';
+  tokenType?: 'customer' | 'admin' | 'auto';
   params?: Record<string, string | number | boolean | undefined>;
 }
 
@@ -27,7 +27,7 @@ export async function apiClient<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { tokenType, params, headers = {}, ...customConfig } = options;
+  const { tokenType = 'auto', params, headers = {}, ...customConfig } = options;
 
   let url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
@@ -49,18 +49,24 @@ export async function apiClient<T>(
     ...(headers as Record<string, string>),
   };
 
-  // Attach appropriate token if available
+  // Determine which token to attach
+  let token: string | null = null;
   if (tokenType === 'admin') {
-    const adminToken = localStorage.getItem('loan_approve_admin_token');
-    if (adminToken) {
-      reqHeaders['Authorization'] = `Bearer ${adminToken}`;
-    }
+    token = localStorage.getItem('loan_approve_admin_token');
+  } else if (tokenType === 'customer') {
+    token = localStorage.getItem('loan_approve_customer_token');
   } else {
-    // Default or customer token
-    const customerToken = localStorage.getItem('loan_approve_customer_token');
-    if (customerToken) {
-      reqHeaders['Authorization'] = `Bearer ${customerToken}`;
+    // Auto: check active role or try admin then customer
+    const activeRole = localStorage.getItem('loan_approve_active_role');
+    if (activeRole === 'ADMIN') {
+      token = localStorage.getItem('loan_approve_admin_token');
+    } else {
+      token = localStorage.getItem('loan_approve_customer_token') || localStorage.getItem('loan_approve_admin_token');
     }
+  }
+
+  if (token && !reqHeaders['Authorization']) {
+    reqHeaders['Authorization'] = `Bearer ${token}`;
   }
 
   const config: RequestInit = {
@@ -81,6 +87,15 @@ export async function apiClient<T>(
 
     if (!response.ok) {
       const errorMessage = data?.message || `HTTP ${response.status}: ${response.statusText}`;
+
+      // Handle token expiration / unauthorized
+      if (response.status === 401 && !endpoint.includes('/auth/')) {
+        // Clear expired tokens if accessing protected resources
+        localStorage.removeItem('loan_approve_customer_token');
+        localStorage.removeItem('loan_approve_admin_token');
+        localStorage.removeItem('loan_approve_active_role');
+      }
+
       throw new ApiError(response.status, errorMessage, data?.errors);
     }
 

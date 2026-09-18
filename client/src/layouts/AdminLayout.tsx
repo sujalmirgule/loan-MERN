@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -13,12 +13,22 @@ import {
   Menu,
   X,
   ShieldCheck,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
 
 export const AdminLayout: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/admin/login', { replace: true });
+  };
 
   const navItems = [
     { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
@@ -92,9 +102,19 @@ export const AdminLayout: React.FC = () => {
           })}
         </nav>
 
-        <div className="p-4 border-t border-slate-800 text-xs text-slate-400">
-          <p className="font-semibold text-slate-300">System Admin</p>
-          <p className="truncate">admin@loanapprove.com</p>
+        {/* Footer with user identity & sign out */}
+        <div className="p-4 border-t border-slate-800 flex items-center justify-between">
+          <div className="text-xs text-slate-400 truncate pr-2">
+            <p className="font-semibold text-slate-200 truncate">{user?.fullName || 'System Administrator'}</p>
+            <p className="truncate text-[11px] text-slate-400">{user?.email || 'admin@loanapprove.com'}</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+            title="Sign Out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </aside>
 
@@ -114,8 +134,17 @@ export const AdminLayout: React.FC = () => {
           </div>
           <div className="flex items-center space-x-3 text-sm">
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-              Production Mode
+              Admin Authenticated
             </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              className="text-xs text-slate-600 hover:text-destructive hover:bg-red-50 h-8"
+            >
+              <LogOut className="w-3.5 h-3.5 mr-1" />
+              Sign Out
+            </Button>
           </div>
         </header>
 

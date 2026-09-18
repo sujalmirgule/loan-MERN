@@ -25,7 +25,6 @@ model AdminUser {
   updatedAt    DateTime  @updatedAt
 
   disbursements Disbursement[]
-  auditLogs     AuditLog[]
 }
 
 // -------------------------------------------------------------
@@ -263,22 +262,22 @@ model Notification {
 // 10. AUDIT LOG (Immutable)
 // -------------------------------------------------------------
 model AuditLog {
-  id            String     @id @default(uuid())
-  actorType     String     // ADMIN, CUSTOMER, SYSTEM
+  id            String    @id @default(uuid())
+  actorType     String    // ADMIN, CUSTOMER, SYSTEM
   actorId       String?
-  admin         AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
   actorName     String
-  action        String     // APPROVE_LOAN, MODIFY_AMOUNT, DISBURSE, etc.
-  entity        String     // LoanApplication, Customer, Document, etc.
+  action        String    // APPROVE_LOAN, MODIFY_AMOUNT, DISBURSE, etc.
+  entity        String    // LoanApplication, Customer, Document, etc.
   entityId      String
-  previousValue String?    // JSON stringified before state
-  newValue      String?    // JSON stringified after state
+  previousValue String?   // JSON stringified before state
+  newValue      String?   // JSON stringified after state
   ipAddress     String?
-  timestamp     DateTime   @default(now())
+  timestamp     DateTime  @default(now())
 
   @@index([entity])
   @@index([entityId])
   @@index([timestamp])
+  @@index([actorId])
 }
 
 // -------------------------------------------------------------
