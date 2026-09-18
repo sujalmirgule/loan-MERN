@@ -8,11 +8,16 @@ import { CustomerRegister } from '@/pages/customer/CustomerRegister';
 import { CustomerHome } from '@/pages/customer/CustomerHome';
 import { CustomerProfile } from '@/pages/customer/CustomerProfile';
 import { CustomerDocuments } from '@/pages/customer/CustomerDocuments';
+import { ApplyLoanPage } from '@/pages/customer/ApplyLoanPage';
+import { CustomerLoansPage } from '@/pages/customer/CustomerLoansPage';
+import { CustomerLoanDetailPage } from '@/pages/customer/CustomerLoanDetailPage';
 import { CustomerLayout } from '@/layouts/CustomerLayout';
 import { AdminLogin } from '@/pages/admin/AdminLogin';
 import { AdminDashboard } from '@/pages/admin/AdminDashboard';
 import { AdminKycList } from '@/pages/admin/AdminKycList';
 import { AdminKycDetail } from '@/pages/admin/AdminKycDetail';
+import { AdminLoansPage } from '@/pages/admin/AdminLoansPage';
+import { AdminLoanDetailPage } from '@/pages/admin/AdminLoanDetailPage';
 import { AdminLayout } from '@/layouts/AdminLayout';
 
 const queryClient = new QueryClient({
@@ -56,8 +61,11 @@ export function App() {
               <Route path="/customer" element={<CustomerLayout />}>
                 <Route index element={<Navigate to="/customer/dashboard" replace />} />
                 <Route path="dashboard" element={<CustomerHome />} />
-                <Route path="loans" element={<CustomerHome />} />
-                <Route path="apply" element={<CustomerHome />} />
+                <Route path="loans" element={<CustomerLoansPage />} />
+                <Route path="loans/:id" element={<CustomerLoanDetailPage />} />
+                <Route path="applications" element={<CustomerLoansPage />} />
+                <Route path="applications/:id" element={<CustomerLoanDetailPage />} />
+                <Route path="apply" element={<ApplyLoanPage />} />
                 <Route path="payments" element={<CustomerHome />} />
                 <Route path="documents" element={<CustomerDocuments />} />
                 <Route path="notifications" element={<CustomerHome />} />
@@ -82,7 +90,10 @@ export function App() {
                 <Route index element={<Navigate to="/admin/dashboard" replace />} />
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="customers" element={<AdminDashboard />} />
-                <Route path="loans" element={<AdminDashboard />} />
+                <Route path="loans" element={<AdminLoansPage />} />
+                <Route path="loans/:id" element={<AdminLoanDetailPage />} />
+                <Route path="applications" element={<AdminLoansPage />} />
+                <Route path="applications/:id" element={<AdminLoanDetailPage />} />
                 <Route path="documents" element={<AdminKycList />} />
                 <Route path="kyc" element={<AdminKycList />} />
                 <Route path="kyc/:customerId" element={<AdminKycDetail />} />

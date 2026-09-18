@@ -145,13 +145,13 @@ export async function apiClient<T>(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 apiClient.get = async (endpoint: string, options?: RequestOptions & { responseType?: string }): Promise<any> => {
-  return apiClient<any>(endpoint, { ...options, method: 'GET' });
+  return apiClient<unknown>(endpoint, { ...options, method: 'GET' });
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 apiClient.post = async (endpoint: string, body?: unknown, options?: RequestOptions): Promise<any> => {
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
-  return apiClient<any>(endpoint, {
+  return apiClient<unknown>(endpoint, {
     ...options,
     method: 'POST',
     body: isFormData ? (body as FormData) : JSON.stringify(body),
@@ -161,7 +161,7 @@ apiClient.post = async (endpoint: string, body?: unknown, options?: RequestOptio
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 apiClient.patch = async (endpoint: string, body?: unknown, options?: RequestOptions): Promise<any> => {
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
-  return apiClient<any>(endpoint, {
+  return apiClient<unknown>(endpoint, {
     ...options,
     method: 'PATCH',
     body: isFormData ? (body as FormData) : JSON.stringify(body),
@@ -170,6 +170,6 @@ apiClient.patch = async (endpoint: string, body?: unknown, options?: RequestOpti
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 apiClient.delete = async (endpoint: string, options?: RequestOptions): Promise<any> => {
-  return apiClient<any>(endpoint, { ...options, method: 'DELETE' });
+  return apiClient<unknown>(endpoint, { ...options, method: 'DELETE' });
 };
 

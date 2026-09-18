@@ -70,12 +70,14 @@ model Customer {
 // -------------------------------------------------------------
 model LoanApplication {
   id                   String    @id @default(uuid())
-  applicationNumber    String    @unique // e.g. LN-2026-000001
+  applicationNumber    String    @unique // e.g. LA-2026-000001
   customerId           String
   customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   
   requestedAmount      Float
+  proposedAmount       Float?    // Admin proposed amount in offer workflow
   approvedAmount       Float?
+  acceptedAmount       Float?    // Customer accepted offer amount
   
   interestType         String    @default("PERCENTAGE") // PERCENTAGE, FIXED
   interestRate         Float     @default(12.0)
@@ -86,24 +88,27 @@ model LoanApplication {
   processingFeeAmount  Float     @default(0)
   
   tenureMonths         Int
-  estimatedEmi         Float
+  estimatedEmi         Float?    @default(0)
   finalEmi             Float?
   
   purpose              String?
   status               String    @default("SUBMITTED") 
   // DRAFT, SUBMITTED, UNDER_REVIEW, DOCUMENTS_REQUIRED, ON_HOLD, APPROVED, 
-  // CUSTOMER_ACCEPTANCE_REQUIRED, AGREEMENT_PENDING, AGREEMENT_ACCEPTED, 
-  // DISBURSEMENT_PENDING, DISBURSED, ACTIVE, OVERDUE, CLOSED, REJECTED, CANCELLED
+  // REJECTED, OFFER_PENDING_CUSTOMER, OFFER_ACCEPTED, OFFER_REJECTED
 
   rejectionReason      String?
   holdReason           String?
   docRequestReason     String?
   modifiedOfferAccepted Boolean?
   
+  reviewedBy           String?
+  reviewedAt           DateTime?
+  submittedAt          DateTime? @default(now())
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   documents            LoanDocument[]
+  documentRequests     DocumentRequest[]
   agreement            LoanAgreement?
   disbursements        Disbursement[]
   emiSchedules         EMISchedule[]
@@ -113,6 +118,7 @@ model LoanApplication {
   @@index([customerId])
   @@index([status])
   @@index([createdAt])
+  @@index([submittedAt])
 }
 
 // -------------------------------------------------------------
@@ -154,18 +160,21 @@ model LoanDocument {
 // 4b. DOCUMENT REQUEST (Admin initiated)
 // -------------------------------------------------------------
 model DocumentRequest {
-  id           String    @id @default(uuid())
+  id           String           @id @default(uuid())
   customerId   String
-  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  documentType String    // e.g. OTHER, BANK_STATEMENT, etc.
+  customer     Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  loanId       String?
+  loan         LoanApplication? @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  documentType String           // e.g. OTHER, BANK_STATEMENT, etc.
   title        String
   description  String?
-  status       String    @default("PENDING") // PENDING, FULFILLED, CANCELLED
+  status       String           @default("PENDING") // PENDING, FULFILLED, CANCELLED
   requestedBy  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   @@index([customerId])
+  @@index([loanId])
   @@index([status])
 }
 
