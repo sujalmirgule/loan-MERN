@@ -13,8 +13,7 @@ router.use('/health', healthRoutes);
 // Authentication endpoints with strict rate limiting
 router.use('/auth', authLimiter, authRoutes);
 
-// Protected Customer endpoints (supporting both singular and plural)
-router.use('/customer', customerRoutes);
+// Protected Customer endpoints
 router.use('/customers', customerRoutes);
 
 // Protected Admin endpoints

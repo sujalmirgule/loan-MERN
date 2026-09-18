@@ -6,13 +6,9 @@ import { LandingPage } from '@/pages/LandingPage';
 import { CustomerLogin } from '@/pages/customer/CustomerLogin';
 import { CustomerRegister } from '@/pages/customer/CustomerRegister';
 import { CustomerHome } from '@/pages/customer/CustomerHome';
-import { CustomerProfile } from '@/pages/customer/CustomerProfile';
-import { CustomerDocuments } from '@/pages/customer/CustomerDocuments';
 import { CustomerLayout } from '@/layouts/CustomerLayout';
 import { AdminLogin } from '@/pages/admin/AdminLogin';
 import { AdminDashboard } from '@/pages/admin/AdminDashboard';
-import { AdminKycList } from '@/pages/admin/AdminKycList';
-import { AdminKycDetail } from '@/pages/admin/AdminKycDetail';
 import { AdminLayout } from '@/layouts/AdminLayout';
 
 const queryClient = new QueryClient({
@@ -59,10 +55,10 @@ export function App() {
                 <Route path="loans" element={<CustomerHome />} />
                 <Route path="apply" element={<CustomerHome />} />
                 <Route path="payments" element={<CustomerHome />} />
-                <Route path="documents" element={<CustomerDocuments />} />
+                <Route path="documents" element={<CustomerHome />} />
                 <Route path="notifications" element={<CustomerHome />} />
                 <Route path="support" element={<CustomerHome />} />
-                <Route path="profile" element={<CustomerProfile />} />
+                <Route path="profile" element={<CustomerHome />} />
               </Route>
             </Route>
 
@@ -83,9 +79,7 @@ export function App() {
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="customers" element={<AdminDashboard />} />
                 <Route path="loans" element={<AdminDashboard />} />
-                <Route path="documents" element={<AdminKycList />} />
-                <Route path="kyc" element={<AdminKycList />} />
-                <Route path="kyc/:customerId" element={<AdminKycDetail />} />
+                <Route path="documents" element={<AdminDashboard />} />
                 <Route path="payments" element={<AdminDashboard />} />
                 <Route path="disbursements" element={<AdminDashboard />} />
                 <Route path="reports" element={<AdminDashboard />} />

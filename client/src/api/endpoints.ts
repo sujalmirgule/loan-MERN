@@ -8,26 +8,13 @@ export const API_ENDPOINTS = {
     LOGOUT: '/auth/logout',
   },
   CUSTOMERS: {
-    PROFILE: '/customer/profile',
-    UPDATE: '/customer/profile',
+    PROFILE: '/customers/profile',
+    UPDATE: '/customers/profile',
     LIST: '/admin/customers',
     DETAIL: (id: string) => `/admin/customers/${id}`,
   },
-  CUSTOMER_DOCS: {
-    LIST: '/customer/documents',
-    UPLOAD: '/customer/documents',
-    DETAIL: (id: string) => `/customer/documents/${id}`,
-    FILE: (id: string) => `/customer/documents/${id}/file`,
-    REUPLOAD: (id: string) => `/customer/documents/${id}/reupload`,
-  },
   ADMIN: {
     STATUS: '/admin/status',
-    KYC_LIST: '/admin/kyc',
-    KYC_DETAIL: (id: string) => `/admin/kyc/${id}`,
-    REVIEW_DOCUMENT: (id: string) => `/admin/kyc/documents/${id}/review`,
-    DOCUMENT_FILE: (id: string) => `/admin/kyc/documents/${id}/file`,
-    REQUEST_DOCUMENT: (id: string) => `/admin/kyc/${id}/request-document`,
-    KYC_DECISION: (id: string) => `/admin/kyc/${id}/decision`,
   },
   LOANS: {
     APPLY: '/loans/apply',
