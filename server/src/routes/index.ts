@@ -7,11 +7,16 @@ import { authLimiter } from '../middleware/rateLimiter';
 
 import { authenticate } from '../middleware/authMiddleware';
 import { loanApplicationController } from '../controllers/loanApplicationController';
+import { settingsController } from '../controllers/settingsController';
 
 const router = Router();
 
 // Health check endpoint
 router.use('/health', healthRoutes);
+
+// Public dynamic branding and system configuration
+router.get('/public/config', settingsController.getPublicConfig);
+router.get('/settings/branding', settingsController.getPublicConfig);
 
 // Authentication endpoints with strict rate limiting
 router.use('/auth', authLimiter, authRoutes);

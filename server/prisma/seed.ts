@@ -50,6 +50,57 @@ async function main() {
   });
   console.log(`✅ Default branding settings seeded: ${branding.appName}`);
 
+  // 3. Seed Default Email Settings
+  await prisma.emailSettings.upsert({
+    where: { id: 'default' },
+    update: {},
+    create: {
+      id: 'default',
+      smtpHost: 'smtp.loanapprove.com',
+      smtpPort: 587,
+      smtpUsername: 'notifications@loanapprove.com',
+      smtpPasswordEnc: '',
+      fromName: 'Loan Approve Financial Services',
+      fromEmail: 'notifications@loanapprove.com',
+      encryption: 'STARTTLS',
+    },
+  });
+  console.log('✅ Default email settings seeded');
+
+  // 4. Seed Default WhatsApp Settings
+  await prisma.whatsAppSettings.upsert({
+    where: { id: 'default' },
+    update: {},
+    create: {
+      id: 'default',
+      provider: 'META',
+      phoneNumber: '+919876543210',
+      phoneNumberId: '',
+      businessAccountId: '',
+      apiEndpoint: 'https://graph.facebook.com/v19.0',
+      accessTokenEnc: '',
+      enabled: false,
+    },
+  });
+  console.log('✅ Default WhatsApp settings seeded');
+
+  // 5. Seed Default Payment Config
+  await prisma.paymentConfig.upsert({
+    where: { id: 'default' },
+    update: {},
+    create: {
+      id: 'default',
+      chargeAmount: 500,
+      chargeType: 'PROCESSING_DEPOSIT',
+      upiId: 'pay@loanapprove',
+      accountNumber: '9876543210123',
+      ifscCode: 'HDFC0001234',
+      accountHolderName: 'Loan Approve Financial Services',
+      instructions: 'Please transfer the processing fee using UPI or IMPS and enter the 12-digit UTR number below.',
+    },
+  });
+  console.log('✅ Default payment config seeded');
+
   console.log('✨ Seeding completed successfully.');
 }
 

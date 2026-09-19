@@ -100,6 +100,7 @@ model LoanApplication {
   holdReason           String?
   docRequestReason     String?
   modifiedOfferAccepted Boolean?
+  paymentStatus        String    @default("NOT_REQUIRED") // NOT_REQUIRED, PAYMENT_REQUIRED, UNDER_VERIFICATION, PAID
   
   reviewedBy           String?
   reviewedAt           DateTime?
@@ -266,9 +267,13 @@ model Payment {
   
   amount         Float
   paymentMethod  String          // UPI, NET_BANKING, DEBIT_CARD, MOCK
+  paymentType    String          @default("PROCESSING_FEE") // PROCESSING_FEE, EMI_REPAYMENT
   transactionRef String          @unique
   receiptNumber  String          @unique
-  status         String          @default("SUCCESS") // SUCCESS, FAILED, PENDING
+  status         String          @default("SUCCESS") // PENDING, UNDER_VERIFICATION, SUCCESS, PAID, FAILED, REJECTED
+  verifiedBy     String?
+  verifiedAt     DateTime?
+  rejectionReason String?
   notes          String?
   paymentDate    DateTime        @default(now())
 
@@ -276,6 +281,7 @@ model Payment {
   @@index([customerId])
   @@index([transactionRef])
   @@index([receiptNumber])
+  @@index([status])
 }
 
 // -------------------------------------------------------------
@@ -357,3 +363,49 @@ model SupportTicket {
   @@index([customerId])
   @@index([status])
 }
+
+// -------------------------------------------------------------
+// 13. EMAIL SETTINGS (SMTP)
+// -------------------------------------------------------------
+model EmailSettings {
+  id              String   @id @default("default")
+  smtpHost        String   @default("")
+  smtpPort        Int      @default(587)
+  smtpUsername    String   @default("")
+  smtpPasswordEnc String   @default("")
+  fromName        String   @default("Loan Approve Financial Services")
+  fromEmail       String   @default("notifications@loanapprove.com")
+  encryption      String   @default("STARTTLS") // NONE, SSL, STARTTLS
+  updatedAt       DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// 14. WHATSAPP SETTINGS
+// -------------------------------------------------------------
+model WhatsAppSettings {
+  id                String   @id @default("default")
+  provider          String   @default("META") // META, TWILIO, GUPSHUP
+  phoneNumber       String   @default("")
+  phoneNumberId     String   @default("")
+  businessAccountId String   @default("")
+  apiEndpoint       String   @default("")
+  accessTokenEnc    String   @default("")
+  enabled           Boolean  @default(false)
+  updatedAt         DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// 15. PAYMENT CONFIGURATION
+// -------------------------------------------------------------
+model PaymentConfig {
+  id                String   @id @default("default")
+  chargeAmount      Float    @default(500)
+  chargeType        String   @default("PROCESSING_DEPOSIT") // PROCESSING_DEPOSIT, VERIFICATION_FEE
+  upiId             String   @default("pay@loanapprove")
+  accountNumber     String   @default("9876543210123")
+  ifscCode          String   @default("HDFC0001234")
+  accountHolderName String   @default("Loan Approve Financial Services")
+  instructions      String   @default("Please transfer the processing fee using UPI or IMPS and enter the 12-digit UTR number below.")
+  updatedAt         DateTime @updatedAt
+}
+

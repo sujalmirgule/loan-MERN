@@ -88,7 +88,7 @@ export async function apiClient<T>(
     const response = await fetch(url, config);
 
     // Handle blob / binary responses
-    const contentType = response.headers.get('content-type') || '';
+    const contentType = response.headers?.get ? (response.headers.get('content-type') || '') : '';
     if (customConfig.cache === 'no-store' && !contentType.includes('application/json')) {
       // Return raw response for streams
       return response as unknown as T;
@@ -105,8 +105,8 @@ export async function apiClient<T>(
       return {
         data: blob,
         headers: {
-          'content-type': response.headers.get('content-type') || 'application/octet-stream',
-          'content-disposition': response.headers.get('content-disposition') || '',
+          'content-type': response.headers?.get ? (response.headers.get('content-type') || 'application/octet-stream') : 'application/octet-stream',
+          'content-disposition': response.headers?.get ? (response.headers.get('content-disposition') || '') : '',
         },
       } as unknown as T;
     }
@@ -159,6 +159,16 @@ apiClient.post = async (endpoint: string, body?: unknown, options?: RequestOptio
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+apiClient.put = async (endpoint: string, body?: unknown, options?: RequestOptions): Promise<any> => {
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  return apiClient<unknown>(endpoint, {
+    ...options,
+    method: 'PUT',
+    body: isFormData ? (body as FormData) : JSON.stringify(body),
+  });
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 apiClient.patch = async (endpoint: string, body?: unknown, options?: RequestOptions): Promise<any> => {
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   return apiClient<unknown>(endpoint, {
@@ -172,4 +182,6 @@ apiClient.patch = async (endpoint: string, body?: unknown, options?: RequestOpti
 apiClient.delete = async (endpoint: string, options?: RequestOptions): Promise<any> => {
   return apiClient<unknown>(endpoint, { ...options, method: 'DELETE' });
 };
+
+export const api = apiClient;
 

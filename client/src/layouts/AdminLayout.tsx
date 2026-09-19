@@ -14,9 +14,14 @@ import {
   X,
   ShieldCheck,
   LogOut,
+  LifeBuoy,
+  Bell,
+  Mail,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { useBranding } from '@/contexts/BrandingContext';
 import { Button } from '@/components/ui/button';
 
 export const AdminLayout: React.FC = () => {
@@ -24,6 +29,7 @@ export const AdminLayout: React.FC = () => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
+  const { branding } = useBranding();
 
   const handleLogout = async () => {
     await logout();
@@ -35,11 +41,18 @@ export const AdminLayout: React.FC = () => {
     { label: 'Customers', path: '/admin/customers', icon: Users },
     { label: 'Loans & Reviews', path: '/admin/loans', icon: FileSpreadsheet },
     { label: 'KYC & Documents', path: '/admin/documents', icon: FileCheck },
+    { label: 'Payments & UTR', path: '/admin/payments', icon: CreditCard },
     { label: 'Disbursements', path: '/admin/disbursements', icon: Send },
-    { label: 'Repayments', path: '/admin/payments', icon: CreditCard },
-    { label: 'Reports', path: '/admin/reports', icon: BarChart3 },
-    { label: 'Audit Logs', path: '/admin/audit', icon: History },
-    { label: 'Branding & Settings', path: '/admin/settings', icon: Settings },
+    { label: 'Reports & Analytics', path: '/admin/reports', icon: BarChart3 },
+    { label: 'Audit Trail', path: '/admin/audit', icon: History },
+    { label: 'Support Tickets', path: '/admin/support', icon: LifeBuoy },
+    { label: 'Action Alerts', path: '/admin/notifications', icon: Bell },
+  ];
+
+  const settingsSubItems = [
+    { label: 'Branding & Theme', path: '/admin/settings/branding', icon: Settings },
+    { label: 'Email / SMTP', path: '/admin/settings/email', icon: Mail },
+    { label: 'WhatsApp Gateway', path: '/admin/settings/whatsapp', icon: MessageSquare },
   ];
 
   return (
@@ -61,11 +74,18 @@ export const AdminLayout: React.FC = () => {
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-slate-950 font-bold">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-bold text-white text-base">Loan Approve</span>
+            {branding.logoUrl ? (
+              <img src={branding.logoUrl} alt={branding.appName} className="w-8 h-8 object-contain rounded" />
+            ) : (
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold"
+                style={{ backgroundColor: branding.primaryColor || '#047857' }}
+              >
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+            )}
+            <div className="truncate max-w-[140px]">
+              <span className="font-bold text-white text-base truncate block">{branding.appName}</span>
               <span className="block text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">
                 Admin Console
               </span>
@@ -89,7 +109,7 @@ export const AdminLayout: React.FC = () => {
                 to={item.path}
                 onClick={() => setSidebarOpen(false)}
                 className={cn(
-                  'flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  'flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                   isActive
                     ? 'bg-emerald-600 text-white font-semibold'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -100,6 +120,35 @@ export const AdminLayout: React.FC = () => {
               </Link>
             );
           })}
+
+          {/* Settings Section */}
+          <div className="pt-3 border-t border-slate-800 mt-2">
+            <span className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              System Settings
+            </span>
+            <div className="mt-1 space-y-1">
+              {settingsSubItems.map((sub) => {
+                const SubIcon = sub.icon;
+                const isSubActive = location.pathname === sub.path;
+                return (
+                  <Link
+                    key={sub.path}
+                    to={sub.path}
+                    onClick={() => setSidebarOpen(false)}
+                    className={cn(
+                      'flex items-center space-x-3 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      isSubActive
+                        ? 'bg-slate-800 text-emerald-400 font-semibold'
+                        : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                    )}
+                  >
+                    <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span>{sub.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         </nav>
 
         {/* Footer with user identity & sign out */}
@@ -129,10 +178,17 @@ export const AdminLayout: React.FC = () => {
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="text-base font-semibold text-slate-800 hidden sm:block">
-              Loan Administration Platform
+              {branding.companyName}
             </h1>
           </div>
           <div className="flex items-center space-x-3 text-sm">
+            <Link
+              to="/admin/notifications"
+              className="relative p-2 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+              title="Action Alerts"
+            >
+              <Bell className="w-5 h-5" />
+            </Link>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
               Admin Authenticated
             </span>
@@ -155,3 +211,5 @@ export const AdminLayout: React.FC = () => {
     </div>
   );
 };
+
+export default AdminLayout;
