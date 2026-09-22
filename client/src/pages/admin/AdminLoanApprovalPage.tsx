@@ -158,6 +158,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
       const res = await apiClient.get(`/admin/loan-applications?${params.toString()}`);
       return res.data;
     },
+    refetchInterval: 1500,
   });
 
   // Query counts for the 3 state tabs
@@ -167,6 +168,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
       const res = await apiClient.get('/admin/loan-applications?status=PENDING&pageSize=1');
       return res.data?.pagination?.total || 0;
     },
+    refetchInterval: 1500,
   });
 
   const { data: approvedCountData } = useQuery({
@@ -175,6 +177,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
       const res = await apiClient.get('/admin/loan-applications?status=APPROVED&pageSize=1');
       return res.data?.pagination?.total || 0;
     },
+    refetchInterval: 1500,
   });
 
   const { data: rejectedCountData } = useQuery({
@@ -183,6 +186,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
       const res = await apiClient.get('/admin/loan-applications?status=REJECTED&pageSize=1');
       return res.data?.pagination?.total || 0;
     },
+    refetchInterval: 1500,
   });
 
   const rawList = responseData?.data || [];

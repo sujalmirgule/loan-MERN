@@ -97,12 +97,59 @@ export const documentService = {
     // ── STAGE GATE: LOAN DOCUMENTS UNLOCK CHECK ───────────────────────────
     const isKycDoc = documentType === 'AADHAAR_FRONT' || documentType === 'AADHAAR_BACK';
     if (!isKycDoc) {
-      if (customer.kycStatus !== 'APPROVED') {
+      if (customer.kycStatus !== 'APPROVED' && customer.kycStatus !== 'VERIFIED') {
         throw new AppError(
           403,
           'Loan documents are locked. Complete KYC verification first.',
           'DOCUMENTS_LOCKED'
         );
+      }
+    } else {
+      // If customer KYC is already APPROVED / VERIFIED
+      if (customer.kycStatus === 'APPROVED' || customer.kycStatus === 'VERIFIED') {
+        // Check if there is an explicit REUPLOAD_REQUIRED on this document
+        const existingKycDoc = await prisma.loanDocument.findFirst({
+          where: {
+            customerId,
+            documentType,
+            isCurrentVersion: true,
+          },
+          orderBy: { version: 'desc' },
+        });
+
+        const pendingRequest = await prisma.documentRequest.findFirst({
+          where: {
+            customerId,
+            documentType,
+            status: 'PENDING',
+          },
+        });
+
+        const isDocReuploadRequired = existingKycDoc?.status === 'REUPLOAD_REQUIRED';
+
+        if (!isDocReuploadRequired && !pendingRequest) {
+          throw new AppError(
+            403,
+            'KYC is already approved and verified. Identity document uploads are locked unless requested by admin.',
+            'KYC_ALREADY_APPROVED'
+          );
+        }
+      }
+    }
+
+    // Resolve targetLoanId if not explicitly provided
+    let targetLoanId = loanId;
+    if (!targetLoanId && !isKycDoc) {
+      const activeLoan = await prisma.loanApplication.findFirst({
+        where: {
+          customerId,
+          status: { notIn: ['REJECTED', 'CANCELLED'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (activeLoan) {
+        targetLoanId = activeLoan.id;
       }
     }
 
@@ -143,7 +190,7 @@ export const documentService = {
       data: {
         id: uniqueFileId,
         customerId,
-        loanId: loanId || null,
+        loanId: targetLoanId || null,
         documentType,
         fileName: path.basename(file.originalname),
         originalFileName: file.originalname,

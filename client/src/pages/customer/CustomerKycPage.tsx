@@ -167,7 +167,10 @@ export const CustomerKycPage: React.FC = () => {
   // Overall KYC status
   const rawKycStatus = profile?.kycStatus?.toUpperCase() || 'PENDING';
   const isKycVerified = (rawKycStatus === 'APPROVED' || rawKycStatus === 'VERIFIED');
-  const isCorrectionRequired = rawKycStatus === 'REUPLOAD_REQUIRED';
+  const isFrontReupload = frontDoc?.status === 'REUPLOAD_REQUIRED';
+  const isBackReupload = backDoc?.status === 'REUPLOAD_REQUIRED';
+  const hasAnyKycReupload = Boolean(isFrontReupload || isBackReupload);
+  const isCorrectionRequired = rawKycStatus === 'REUPLOAD_REQUIRED' || hasAnyKycReupload;
   const isRejected = rawKycStatus === 'REJECTED';
 
   // Upload Mutation
@@ -683,279 +686,437 @@ export const CustomerKycPage: React.FC = () => {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────── */}
-      {/* STEP 2: AADHAAR CARD UPLOADS (FRONT + BACK)                         */}
+      {/* STEP 2: IDENTITY DOCUMENTS (VERIFIED READ-ONLY OR UPLOAD CONTROLS)  */}
       {/* ─────────────────────────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between px-1">
-          <div>
-            <h2 className="text-base sm:text-lg font-bold text-[#0F172A]">
-              Identity Documents (Aadhaar Card)
-            </h2>
-            <p className="text-xs text-[#64748B]">
-              Upload high-resolution images or PDF copies of both sides of your official Aadhaar card.
-            </p>
+      {isKycVerified && !hasAnyKycReupload ? (
+        /* COMPLETED / READ-ONLY VERIFIED IDENTITY STATE */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-[#0F172A]">
+                Verified Identity Credentials
+              </h2>
+              <p className="text-xs text-[#64748B]">
+                Your government identity documents have been verified and approved by underwriting compliance.
+              </p>
+            </div>
+            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              Verified & Locked
+            </span>
           </div>
-          <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#D6E4F5]">
-            2 Documents Required
-          </span>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Card 1: Aadhaar Front */}
-          <Card className={`bg-white border rounded-2xl shadow-xs transition-all ${
-            isFrontUploaded ? 'border-emerald-200' : 'border-[#D6E4F5]'
-          }`}>
-            <CardHeader className="p-4 pb-2">
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 rounded-full bg-[#EFF6FF] text-[#2563EB] font-bold text-xs flex items-center justify-center">
-                      1
-                    </span>
-                    <CardTitle className="text-sm font-bold text-[#0F172A]">
-                      Aadhaar Card — Front Side
-                    </CardTitle>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Card 1: Aadhaar Front - Verified Read-Only */}
+            <Card className="bg-white border border-emerald-200 rounded-2xl shadow-xs">
+              <CardHeader className="p-4 pb-2">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center">
+                        ✓
+                      </span>
+                      <CardTitle className="text-sm font-bold text-[#0F172A]">
+                        Aadhaar Card — Front Side
+                      </CardTitle>
+                    </div>
+                    <CardDescription className="text-xs text-[#64748B] pl-8">
+                      Identity photo and Aadhaar number
+                    </CardDescription>
                   </div>
-                  <CardDescription className="text-xs text-[#64748B] pl-8">
-                    Must clearly display your full name, photograph, and 12-digit Aadhaar number.
-                  </CardDescription>
+                  <Badge className="bg-[#16A34A] text-white font-bold text-xs px-2.5 py-0.5">
+                    Verified ✓
+                  </Badge>
                 </div>
-                <div>
-                  {isFrontUploaded ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/70 px-2.5 py-0.5 rounded-full">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Uploaded
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-semibold text-[#64748B] bg-slate-100 px-2.5 py-0.5 rounded-full">
-                      Pending
-                    </span>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
+              </CardHeader>
 
-            <CardContent className="p-4 pt-2 pl-12 space-y-3">
-              {frontDoc ? (
+              <CardContent className="p-4 pt-2 pl-12 space-y-3">
                 <div className="p-3 rounded-xl bg-[#F7FAFF] border border-[#D6E4F5] text-xs space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[#0F172A] font-semibold truncate max-w-[200px]">
-                      {frontDoc.fileName}
+                      {frontDoc?.fileName || 'Aadhaar_Front.pdf'}
                     </span>
-                    <span className="text-[10px] text-[#64748B]">v{frontDoc.version}</span>
+                    <span className="text-[10px] text-[#64748B]">v{frontDoc?.version || 1}</span>
                   </div>
-
-                  {frontDoc.rejectionReason && (
-                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Correction needed: {frontDoc.rejectionReason}</span>
-                    </p>
-                  )}
-
-                  <div className="flex items-center justify-between pt-1 border-t border-[#D6E4F5]">
-                    <a
-                      href={`/api/customer/documents/${frontDoc.id}/file`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>View File</span>
-                    </a>
-                    {!isKycVerified && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setActiveUploadType(activeUploadType === 'AADHAAR_FRONT' ? null : 'AADHAAR_FRONT');
-                          setFile(null);
-                        }}
-                        className="text-xs h-7 px-2 text-[#64748B] hover:text-[#0F172A]"
+                  {frontDoc && (
+                    <div className="pt-1 border-t border-[#D6E4F5]">
+                      <a
+                        href={`/api/customer/documents/${frontDoc.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1"
                       >
-                        {activeUploadType === 'AADHAAR_FRONT' ? 'Cancel' : 'Re-upload'}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setActiveUploadType(activeUploadType === 'AADHAAR_FRONT' ? null : 'AADHAAR_FRONT');
-                    setFile(null);
-                  }}
-                  className="text-xs w-full flex items-center justify-center space-x-1.5 h-9 border-[#D6E4F5]"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Upload Front Side</span>
-                </Button>
-              )}
-
-              {/* Inline Upload Form */}
-              {activeUploadType === 'AADHAAR_FRONT' && !isKycVerified && (
-                <div className="p-3.5 rounded-xl border-2 border-dashed border-[#2563EB]/40 bg-[#EFF6FF]/40 space-y-3 animate-in fade-in">
-                  <input
-                    type="file"
-                    id="frontFileInput"
-                    aria-label="Upload Aadhaar Front"
-                    accept="image/jpeg,image/png,image/jpg,application/pdf"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                  <label
-                    htmlFor="frontFileInput"
-                    className="cursor-pointer block text-center p-3 hover:bg-white rounded-lg transition-colors border border-dashed border-[#D6E4F5]"
-                  >
-                    <Camera className="w-6 h-6 text-[#2563EB] mx-auto mb-1" />
-                    <span className="text-xs font-bold text-[#0F172A] block">
-                      {file ? file.name : 'Click to select photo or PDF'}
-                    </span>
-                    <span className="text-[10px] text-[#64748B]">JPG, PNG, PDF up to 10 MB</span>
-                  </label>
-
-                  {file && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleUploadSubmit('AADHAAR_FRONT')}
-                      disabled={uploadMutation.isPending}
-                      className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold h-8.5 rounded-lg shadow-sm"
-                    >
-                      {uploadMutation.isPending ? 'Uploading...' : 'Confirm Upload'}
-                    </Button>
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View File</span>
+                      </a>
+                    </div>
                   )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          {/* Card 2: Aadhaar Back */}
-          <Card className={`bg-white border rounded-2xl shadow-xs transition-all ${
-            isBackUploaded ? 'border-emerald-200' : 'border-[#D6E4F5]'
-          }`}>
-            <CardHeader className="p-4 pb-2">
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 rounded-full bg-[#EFF6FF] text-[#2563EB] font-bold text-xs flex items-center justify-center">
-                      2
-                    </span>
-                    <CardTitle className="text-sm font-bold text-[#0F172A]">
-                      Aadhaar Card — Back Side
-                    </CardTitle>
+            {/* Card 2: Aadhaar Back - Verified Read-Only */}
+            <Card className="bg-white border border-emerald-200 rounded-2xl shadow-xs">
+              <CardHeader className="p-4 pb-2">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center">
+                        ✓
+                      </span>
+                      <CardTitle className="text-sm font-bold text-[#0F172A]">
+                        Aadhaar Card — Back Side
+                      </CardTitle>
+                    </div>
+                    <CardDescription className="text-xs text-[#64748B] pl-8">
+                      Registered residential address
+                    </CardDescription>
                   </div>
-                  <CardDescription className="text-xs text-[#64748B] pl-8">
-                    Must clearly display your full residential address and barcode/QR code.
-                  </CardDescription>
+                  <Badge className="bg-[#16A34A] text-white font-bold text-xs px-2.5 py-0.5">
+                    Verified ✓
+                  </Badge>
                 </div>
-                <div>
-                  {isBackUploaded ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/70 px-2.5 py-0.5 rounded-full">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Uploaded
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-semibold text-[#64748B] bg-slate-100 px-2.5 py-0.5 rounded-full">
-                      Pending
-                    </span>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
+              </CardHeader>
 
-            <CardContent className="p-4 pt-2 pl-12 space-y-3">
-              {backDoc ? (
+              <CardContent className="p-4 pt-2 pl-12 space-y-3">
                 <div className="p-3 rounded-xl bg-[#F7FAFF] border border-[#D6E4F5] text-xs space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[#0F172A] font-semibold truncate max-w-[200px]">
-                      {backDoc.fileName}
+                      {backDoc?.fileName || 'Aadhaar_Back.pdf'}
                     </span>
-                    <span className="text-[10px] text-[#64748B]">v{backDoc.version}</span>
+                    <span className="text-[10px] text-[#64748B]">v{backDoc?.version || 1}</span>
                   </div>
-
-                  {backDoc.rejectionReason && (
-                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Correction needed: {backDoc.rejectionReason}</span>
-                    </p>
-                  )}
-
-                  <div className="flex items-center justify-between pt-1 border-t border-[#D6E4F5]">
-                    <a
-                      href={`/api/customer/documents/${backDoc.id}/file`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>View File</span>
-                    </a>
-                    {!isKycVerified && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setActiveUploadType(activeUploadType === 'AADHAAR_BACK' ? null : 'AADHAAR_BACK');
-                          setFile(null);
-                        }}
-                        className="text-xs h-7 px-2 text-[#64748B] hover:text-[#0F172A]"
+                  {backDoc && (
+                    <div className="pt-1 border-t border-[#D6E4F5]">
+                      <a
+                        href={`/api/customer/documents/${backDoc.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1"
                       >
-                        {activeUploadType === 'AADHAAR_BACK' ? 'Cancel' : 'Re-upload'}
-                      </Button>
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View File</span>
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Primary Action Card */}
+          <Card className="border border-[#2563EB]/30 bg-[#EFF6FF]/60 p-5 rounded-2xl shadow-xs">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="space-y-1 text-center sm:text-left">
+                <h3 className="text-sm sm:text-base font-bold text-[#0F172A] flex items-center gap-2">
+                  <FileCheck2 className="w-5 h-5 text-[#2563EB]" />
+                  <span>Next Step: Upload Loan Application Documents</span>
+                </h3>
+                <p className="text-xs text-[#64748B] max-w-lg">
+                  Identity KYC is fully verified. Proceed to upload your financial documents (PAN, Bank Statement, Income Proof) to complete your loan underwriting.
+                </p>
+              </div>
+              <Link to="/customer/documents" className="shrink-0 w-full sm:w-auto">
+                <Button className="w-full sm:w-auto bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs h-10 px-6 rounded-xl shadow-md flex items-center justify-center gap-2">
+                  <span>Continue to Loan Documents</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        </div>
+      ) : (
+        /* PRE-VERIFICATION OR RE-UPLOAD REQUIRED EXPERIENCE */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-[#0F172A]">
+                Identity Documents (Aadhaar Card)
+              </h2>
+              <p className="text-xs text-[#64748B]">
+                {hasAnyKycReupload
+                  ? 'Please re-upload the requested document below as instructed by underwriting.'
+                  : 'Upload high-resolution images or PDF copies of both sides of your official Aadhaar card.'}
+              </p>
+            </div>
+            <span className="text-xs font-bold text-[#2563EB] bg-[#EFF6FF] px-2.5 py-1 rounded-full border border-[#D6E4F5]">
+              {hasAnyKycReupload ? 'Correction Required' : '2 Documents Required'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Card 1: Aadhaar Front */}
+            <Card className={`bg-white border rounded-2xl shadow-xs transition-all ${
+              frontDoc?.status === 'REUPLOAD_REQUIRED'
+                ? 'border-amber-300 ring-1 ring-amber-300'
+                : isFrontUploaded
+                ? 'border-emerald-200'
+                : 'border-[#D6E4F5]'
+            }`}>
+              <CardHeader className="p-4 pb-2">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-6 h-6 rounded-full bg-[#EFF6FF] text-[#2563EB] font-bold text-xs flex items-center justify-center">
+                        1
+                      </span>
+                      <CardTitle className="text-sm font-bold text-[#0F172A]">
+                        Aadhaar Card — Front Side
+                      </CardTitle>
+                    </div>
+                    <CardDescription className="text-xs text-[#64748B] pl-8">
+                      Must clearly display your full name, photograph, and 12-digit Aadhaar number.
+                    </CardDescription>
+                  </div>
+                  <div>
+                    {frontDoc?.status === 'REUPLOAD_REQUIRED' ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
+                        Re-upload Required
+                      </span>
+                    ) : isFrontUploaded ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/70 px-2.5 py-0.5 rounded-full">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Uploaded
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-[#64748B] bg-slate-100 px-2.5 py-0.5 rounded-full">
+                        Pending
+                      </span>
                     )}
                   </div>
                 </div>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setActiveUploadType(activeUploadType === 'AADHAAR_BACK' ? null : 'AADHAAR_BACK');
-                    setFile(null);
-                  }}
-                  className="text-xs w-full flex items-center justify-center space-x-1.5 h-9 border-[#D6E4F5]"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Upload Back Side</span>
-                </Button>
-              )}
+              </CardHeader>
 
-              {/* Inline Upload Form */}
-              {activeUploadType === 'AADHAAR_BACK' && !isKycVerified && (
-                <div className="p-3.5 rounded-xl border-2 border-dashed border-[#2563EB]/40 bg-[#EFF6FF]/40 space-y-3 animate-in fade-in">
-                  <input
-                    type="file"
-                    id="backFileInput"
-                    aria-label="Upload Aadhaar Back"
-                    accept="image/jpeg,image/png,image/jpg,application/pdf"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                  <label
-                    htmlFor="backFileInput"
-                    className="cursor-pointer block text-center p-3 hover:bg-white rounded-lg transition-colors border border-dashed border-[#D6E4F5]"
+              <CardContent className="p-4 pt-2 pl-12 space-y-3">
+                {frontDoc ? (
+                  <div className="p-3 rounded-xl bg-[#F7FAFF] border border-[#D6E4F5] text-xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#0F172A] font-semibold truncate max-w-[200px]">
+                        {frontDoc.fileName}
+                      </span>
+                      <span className="text-[10px] text-[#64748B]">v{frontDoc.version}</span>
+                    </div>
+
+                    {frontDoc.rejectionReason && (
+                      <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span>Correction needed: {frontDoc.rejectionReason}</span>
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1 border-t border-[#D6E4F5]">
+                      <a
+                        href={`/api/customer/documents/${frontDoc.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View File</span>
+                      </a>
+                      {(!isKycVerified || frontDoc.status === 'REUPLOAD_REQUIRED') && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setActiveUploadType(activeUploadType === 'AADHAAR_FRONT' ? null : 'AADHAAR_FRONT');
+                            setFile(null);
+                          }}
+                          className="text-xs h-7 px-2 text-[#64748B] hover:text-[#0F172A]"
+                        >
+                          {activeUploadType === 'AADHAAR_FRONT' ? 'Cancel' : 'Re-upload'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setActiveUploadType(activeUploadType === 'AADHAAR_FRONT' ? null : 'AADHAAR_FRONT');
+                      setFile(null);
+                    }}
+                    className="text-xs w-full flex items-center justify-center space-x-1.5 h-9 border-[#D6E4F5]"
                   >
-                    <Camera className="w-6 h-6 text-[#2563EB] mx-auto mb-1" />
-                    <span className="text-xs font-bold text-[#0F172A] block">
-                      {file ? file.name : 'Click to select photo or PDF'}
-                    </span>
-                    <span className="text-[10px] text-[#64748B]">JPG, PNG, PDF up to 10 MB</span>
-                  </label>
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload Front Side</span>
+                  </Button>
+                )}
 
-                  {file && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleUploadSubmit('AADHAAR_BACK')}
-                      disabled={uploadMutation.isPending}
-                      className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold h-8.5 rounded-lg shadow-sm"
+                {/* Inline Upload Form */}
+                {activeUploadType === 'AADHAAR_FRONT' && (!isKycVerified || frontDoc?.status === 'REUPLOAD_REQUIRED') && (
+                  <div className="p-3.5 rounded-xl border-2 border-dashed border-[#2563EB]/40 bg-[#EFF6FF]/40 space-y-3 animate-in fade-in">
+                    <input
+                      type="file"
+                      id="frontFileInput"
+                      aria-label="Upload Aadhaar Front"
+                      accept="image/jpeg,image/png,image/jpg,application/pdf"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="frontFileInput"
+                      className="cursor-pointer block text-center p-3 hover:bg-white rounded-lg transition-colors border border-dashed border-[#D6E4F5]"
                     >
-                      {uploadMutation.isPending ? 'Uploading...' : 'Confirm Upload'}
-                    </Button>
-                  )}
+                      <Camera className="w-6 h-6 text-[#2563EB] mx-auto mb-1" />
+                      <span className="text-xs font-bold text-[#0F172A] block">
+                        {file ? file.name : 'Click to select photo or PDF'}
+                      </span>
+                      <span className="text-[10px] text-[#64748B]">JPG, PNG, PDF up to 10 MB</span>
+                    </label>
+
+                    {file && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleUploadSubmit('AADHAAR_FRONT')}
+                        disabled={uploadMutation.isPending}
+                        className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold h-8.5 rounded-lg shadow-sm"
+                      >
+                        {uploadMutation.isPending ? 'Uploading...' : 'Confirm Upload'}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Card 2: Aadhaar Back */}
+            <Card className={`bg-white border rounded-2xl shadow-xs transition-all ${
+              backDoc?.status === 'REUPLOAD_REQUIRED'
+                ? 'border-amber-300 ring-1 ring-amber-300'
+                : isBackUploaded
+                ? 'border-emerald-200'
+                : 'border-[#D6E4F5]'
+            }`}>
+              <CardHeader className="p-4 pb-2">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-6 h-6 rounded-full bg-[#EFF6FF] text-[#2563EB] font-bold text-xs flex items-center justify-center">
+                        2
+                      </span>
+                      <CardTitle className="text-sm font-bold text-[#0F172A]">
+                        Aadhaar Card — Back Side
+                      </CardTitle>
+                    </div>
+                    <CardDescription className="text-xs text-[#64748B] pl-8">
+                      Must clearly display your full residential address and barcode/QR code.
+                    </CardDescription>
+                  </div>
+                  <div>
+                    {backDoc?.status === 'REUPLOAD_REQUIRED' ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
+                        Re-upload Required
+                      </span>
+                    ) : isBackUploaded ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/70 px-2.5 py-0.5 rounded-full">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Uploaded
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-[#64748B] bg-slate-100 px-2.5 py-0.5 rounded-full">
+                        Pending
+                      </span>
+                    )}
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardHeader>
+
+              <CardContent className="p-4 pt-2 pl-12 space-y-3">
+                {backDoc ? (
+                  <div className="p-3 rounded-xl bg-[#F7FAFF] border border-[#D6E4F5] text-xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#0F172A] font-semibold truncate max-w-[200px]">
+                        {backDoc.fileName}
+                      </span>
+                      <span className="text-[10px] text-[#64748B]">v{backDoc.version}</span>
+                    </div>
+
+                    {backDoc.rejectionReason && (
+                      <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span>Correction needed: {backDoc.rejectionReason}</span>
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1 border-t border-[#D6E4F5]">
+                      <a
+                        href={`/api/customer/documents/${backDoc.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View File</span>
+                      </a>
+                      {(!isKycVerified || backDoc.status === 'REUPLOAD_REQUIRED') && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setActiveUploadType(activeUploadType === 'AADHAAR_BACK' ? null : 'AADHAAR_BACK');
+                            setFile(null);
+                          }}
+                          className="text-xs h-7 px-2 text-[#64748B] hover:text-[#0F172A]"
+                        >
+                          {activeUploadType === 'AADHAAR_BACK' ? 'Cancel' : 'Re-upload'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setActiveUploadType(activeUploadType === 'AADHAAR_BACK' ? null : 'AADHAAR_BACK');
+                      setFile(null);
+                    }}
+                    className="text-xs w-full flex items-center justify-center space-x-1.5 h-9 border-[#D6E4F5]"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload Back Side</span>
+                  </Button>
+                )}
+
+                {/* Inline Upload Form */}
+                {activeUploadType === 'AADHAAR_BACK' && (!isKycVerified || backDoc?.status === 'REUPLOAD_REQUIRED') && (
+                  <div className="p-3.5 rounded-xl border-2 border-dashed border-[#2563EB]/40 bg-[#EFF6FF]/40 space-y-3 animate-in fade-in">
+                    <input
+                      type="file"
+                      id="backFileInput"
+                      aria-label="Upload Aadhaar Back"
+                      accept="image/jpeg,image/png,image/jpg,application/pdf"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="backFileInput"
+                      className="cursor-pointer block text-center p-3 hover:bg-white rounded-lg transition-colors border border-dashed border-[#D6E4F5]"
+                    >
+                      <Camera className="w-6 h-6 text-[#2563EB] mx-auto mb-1" />
+                      <span className="text-xs font-bold text-[#0F172A] block">
+                        {file ? file.name : 'Click to select photo or PDF'}
+                      </span>
+                      <span className="text-[10px] text-[#64748B]">JPG, PNG, PDF up to 10 MB</span>
+                    </label>
+
+                    {file && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleUploadSubmit('AADHAAR_BACK')}
+                        disabled={uploadMutation.isPending}
+                        className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold h-8.5 rounded-lg shadow-sm"
+                      >
+                        {uploadMutation.isPending ? 'Uploading...' : 'Confirm Upload'}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────────── */}
       {/* STEP 2/3 DYNAMIC ACTION CONTROLLER                                  */}

@@ -164,6 +164,27 @@ export class LoanApplicationService {
       });
     }
 
+    // Link any unlinked customer loan documents and charges to this newly created application
+    await prisma.loanDocument.updateMany({
+      where: {
+        customerId: customer.id,
+        loanId: null,
+      },
+      data: {
+        loanId: application.id,
+      },
+    });
+
+    await prisma.charge.updateMany({
+      where: {
+        customerId: customer.id,
+        loanId: null,
+      },
+      data: {
+        loanId: application.id,
+      },
+    });
+
     // Record audit events
     await auditService.record({
       actorType: 'CUSTOMER',
@@ -436,6 +457,14 @@ export class LoanApplicationService {
         where.status = {
           in: ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD', 'OFFER_PENDING_CUSTOMER'],
         };
+      } else if ((filters.status as string) === 'APPROVED') {
+        where.status = {
+          in: ['APPROVED', 'OFFER_ACCEPTED', 'DISBURSED', 'ACTIVE'],
+        };
+      } else if ((filters.status as string) === 'REJECTED') {
+        where.status = {
+          in: ['REJECTED', 'OFFER_REJECTED', 'CANCELLED'],
+        };
       } else {
         where.status = filters.status as string;
       }
@@ -699,8 +728,27 @@ export class LoanApplicationService {
       return formatted;
     });
 
+    // Fetch all current documents for this customer to ensure full 360 review (KYC + Loan Docs)
+    const customerDocs = await prisma.loanDocument.findMany({
+      where: {
+        customerId: application.customerId,
+        isCurrentVersion: true,
+      },
+      select: {
+        id: true,
+        documentType: true,
+        fileName: true,
+        fileSize: true,
+        mimeType: true,
+        status: true,
+        uploadedAt: true,
+      },
+      orderBy: { uploadedAt: 'desc' },
+    });
+
     return {
       ...application,
+      documents: customerDocs,
       payments: formattedPayments,
       applicationPayments,
       customerPayments,
@@ -1023,7 +1071,7 @@ export class LoanApplicationService {
       throw new AppError(404, 'Loan application not found');
     }
 
-    const validStatuses = ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD', 'NEW'];
+    const validStatuses = ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD', 'NEW', 'OFFER_ACCEPTED', 'OFFER_PENDING_CUSTOMER'];
     if (!validStatuses.includes(application.status)) {
       throw new AppError(
         400,

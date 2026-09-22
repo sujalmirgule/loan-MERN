@@ -1331,34 +1331,37 @@ export class SpecificChargesService {
         'application/pdf'
       );
 
-      // Create or update Invoice model record (Unique chargeId ensures 1:1 idempotency)
-      invoiceRecord = await prisma.invoice.upsert({
-        where: { chargeId: charge.id },
-        create: {
-          invoiceNumber: invoiceNum,
-          customerId: charge.customerId || customer?.id || '',
-          loanId: charge.loanId || loanApp?.id || '',
-          chargeId: charge.id,
-          paymentId: charge.paymentId,
-          chargeName: charge.name,
-          amount: charge.amount,
-          taxAmount: Math.round(charge.amount * 0.18),
-          totalAmount: Math.round(charge.amount * 1.18),
-          currency: 'INR',
-          status: 'PAID',
-          storageKey: storageResult.storageKey,
-          filePath: storageResult.filePath,
-          fileUrl: `/api/customer/documents/${uniqueFileId}/file`,
-          templateVersion: 'v1.0',
-          brandingVersion: 'v1.0',
-          issuedAt: now,
-        },
-        update: {
-          storageKey: storageResult.storageKey,
-          filePath: storageResult.filePath,
-          status: 'PAID',
-        },
-      });
+      // Create or update Invoice model record if loanId is present (Unique chargeId ensures 1:1 idempotency)
+      const effectiveLoanId = charge.loanId || loanApp?.id;
+      if (effectiveLoanId) {
+        invoiceRecord = await prisma.invoice.upsert({
+          where: { chargeId: charge.id },
+          create: {
+            invoiceNumber: invoiceNum,
+            customerId: charge.customerId || customer?.id || '',
+            loanId: effectiveLoanId,
+            chargeId: charge.id,
+            paymentId: charge.paymentId,
+            chargeName: charge.name,
+            amount: charge.amount,
+            taxAmount: Math.round(charge.amount * 0.18),
+            totalAmount: Math.round(charge.amount * 1.18),
+            currency: 'INR',
+            status: 'PAID',
+            storageKey: storageResult.storageKey,
+            filePath: storageResult.filePath,
+            fileUrl: `/api/customer/documents/${uniqueFileId}/file`,
+            templateVersion: 'v1.0',
+            brandingVersion: 'v1.0',
+            issuedAt: now,
+          },
+          update: {
+            storageKey: storageResult.storageKey,
+            filePath: storageResult.filePath,
+            status: 'PAID',
+          },
+        });
+      }
 
       // Register in LoanDocument for Customer Document Center integration
       await prisma.loanDocument.create({

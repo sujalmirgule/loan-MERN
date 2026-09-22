@@ -177,12 +177,15 @@ export function App() {
                     <Route path="loans" element={<AdminLoansPage />} />
                     <Route path="loan-approval" element={<AdminLoanApprovalPage />} />
                     <Route path="loan-approvals" element={<AdminLoanApprovalPage />} />
+                    <Route path="pending-review" element={<AdminLoanApprovalPage />} />
                     <Route path="loans/pending" element={<AdminPendingLoansPage />} />
                     <Route path="loans/approved" element={<AdminApprovedLoansPage />} />
                     <Route path="loans/rejected" element={<AdminRejectedLoansPage />} />
                     <Route path="loans/active" element={<AdminActiveLoansPage />} />
                     <Route path="loans/disbursed" element={<AdminDisbursementsPage />} />
                     <Route path="pending-loans" element={<AdminPendingLoansPage />} />
+                    <Route path="approved-loans" element={<AdminApprovedLoansPage />} />
+                    <Route path="rejected-loans" element={<AdminRejectedLoansPage />} />
                     <Route path="loans/:id" element={<AdminLoanDetailPage />} />
                     <Route path="applications" element={<AdminLoansPage />} />
                     <Route path="applications/:id" element={<AdminLoanDetailPage />} />
