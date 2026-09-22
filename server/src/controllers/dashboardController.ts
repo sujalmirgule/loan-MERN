@@ -4,11 +4,19 @@ import { AppError } from '../middleware/errorHandler';
 
 export class DashboardController {
   /**
-   * Admin: Get comprehensive dashboard aggregates, funnel, and tracking table.
+   * Admin: Get comprehensive dashboard aggregates, funnel, charts and tracking table.
+   * Supports optional query params: dateFrom, dateTo, state, loanType, status
    */
   async getAdminDashboard(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await dashboardService.getAdminDashboardData();
+      const { dateFrom, dateTo, state, loanType, status } = req.query as Record<string, string | undefined>;
+      const data = await dashboardService.getAdminDashboardData({
+        dateFrom,
+        dateTo,
+        state,
+        loanType,
+        status,
+      });
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);

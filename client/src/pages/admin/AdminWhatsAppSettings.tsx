@@ -121,7 +121,7 @@ export const AdminWhatsAppSettings: React.FC = () => {
       </div>
 
       {successMessage && (
-        <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-800 rounded flex items-center justify-between">
+        <div className="p-4 bg-emerald-50 border-l-4 border-success text-emerald-800 rounded flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="font-medium">{successMessage}</span>
@@ -256,7 +256,7 @@ export const AdminWhatsAppSettings: React.FC = () => {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-semibold text-sm rounded-lg shadow-sm transition"
+                  className="px-6 py-2.5 bg-success text-background hover:brightness-110 disabled:bg-emerald-300 text-text-primary font-semibold text-sm rounded-lg shadow-sm transition"
                 >
                   {saving ? 'Saving...' : 'Save WhatsApp Configuration'}
                 </button>
@@ -292,7 +292,7 @@ export const AdminWhatsAppSettings: React.FC = () => {
               <button
                 type="submit"
                 disabled={testing || !testNumber}
-                className="w-full py-2.5 bg-gray-900 hover:bg-black disabled:bg-gray-400 text-white text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-gray-900 hover:bg-black disabled:bg-gray-400 text-text-primary text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-2"
               >
                 {testing ? (
                   <>
@@ -310,10 +310,12 @@ export const AdminWhatsAppSettings: React.FC = () => {
 
             {testResult && (
               <div
-                className={`p-3 rounded-lg text-xs font-medium ${
+                className={`p-3.5 rounded-lg text-xs font-medium ${
                   testResult.startsWith('Error')
                     ? 'bg-red-50 text-red-700 border border-red-200'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : testResult.includes('Development') || testResult.includes('Not Delivered') || testResult.includes('Sandbox')
+                    ? 'bg-amber-50 text-amber-900 border border-amber-200'
+                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                 }`}
               >
                 {testResult}

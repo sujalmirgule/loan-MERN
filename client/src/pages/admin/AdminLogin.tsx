@@ -41,10 +41,10 @@ export const AdminLogin: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-between p-4 sm:p-6">
+    <div className="theme-admin min-h-screen bg-background flex flex-col justify-between p-4 sm:p-6">
       {/* Top Header */}
       <header className="max-w-md mx-auto w-full pt-4">
-        <Link to="/" className="inline-flex items-center space-x-2 text-slate-400 hover:text-white text-sm font-medium transition-colors">
+        <Link to="/" className="inline-flex items-center space-x-2 text-text-secondary hover:text-text-primary text-sm font-medium transition-colors">
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
         </Link>
@@ -52,15 +52,15 @@ export const AdminLogin: React.FC = () => {
 
       {/* Main Admin Card */}
       <main className="max-w-md w-full mx-auto my-auto">
-        <Card className="shadow-2xl border-slate-800 bg-slate-900 text-white">
+        <Card className="shadow-2xl border-border bg-surface text-text-primary">
           <CardHeader className="text-center pb-4">
-            <div className="mx-auto w-12 h-12 rounded-xl bg-emerald-950/80 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-2 shadow-inner">
+            <div className="mx-auto w-12 h-12 rounded-xl bg-emerald-950/80 border border-success/30 flex items-center justify-center text-success mb-2 shadow-inner">
               <Shield className="w-6 h-6" />
             </div>
-            <CardTitle className="text-2xl font-bold tracking-tight text-white">
+            <CardTitle className="text-2xl font-bold tracking-tight text-text-primary">
               Admin Console
             </CardTitle>
-            <CardDescription className="text-sm text-slate-400">
+            <CardDescription className="text-sm text-text-secondary">
               Sign in with your administrative credentials to manage borrowers, loans, and disbursements.
             </CardDescription>
           </CardHeader>
@@ -68,14 +68,14 @@ export const AdminLogin: React.FC = () => {
           <CardContent>
             {error && (
               <div className="mb-4 p-3 rounded-lg bg-red-950/50 border border-red-800 text-xs text-red-300 flex items-start space-x-2 animate-in fade-in">
-                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <AlertCircle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
                 <span className="font-medium">{error}</span>
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="admin-email" className="text-slate-300">
+                <Label htmlFor="admin-email" className="text-text-secondary">
                   Email Address
                 </Label>
                 <Input
@@ -87,14 +87,14 @@ export const AdminLogin: React.FC = () => {
                     setEmail(e.target.value);
                     if (error) setError(null);
                   }}
-                  className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 focus-visible:ring-emerald-500"
+                  className="bg-surface-elevated border-border text-text-primary placeholder:text-text-secondary focus-visible:ring-emerald-500"
                   autoFocus
                   required
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="admin-password" className="text-slate-300">
+                <Label htmlFor="admin-password" className="text-text-secondary">
                   Password
                 </Label>
                 <div className="relative">
@@ -107,13 +107,13 @@ export const AdminLogin: React.FC = () => {
                       setPassword(e.target.value);
                       if (error) setError(null);
                     }}
-                    className="bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 focus-visible:ring-emerald-500 pr-10"
+                    className="bg-surface-elevated border-border text-text-primary placeholder:text-text-secondary focus-visible:ring-emerald-500 pr-10"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200 transition-colors"
+                    className="absolute right-3 top-2.5 text-text-secondary hover:text-text-primary transition-colors"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -124,7 +124,7 @@ export const AdminLogin: React.FC = () => {
               <Button
                 type="submit"
                 disabled={!email || !password || isSubmitting}
-                className="w-full h-11 text-base font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center space-x-2 shadow-lg transition-all mt-6"
+                className="w-full h-11 text-base font-semibold bg-success text-background hover:bg-emerald-500 text-text-primary flex items-center justify-center space-x-2 shadow-lg transition-all mt-6"
               >
                 {isSubmitting ? (
                   <>
@@ -137,7 +137,7 @@ export const AdminLogin: React.FC = () => {
               </Button>
             </form>
 
-            <div className="mt-6 text-center pt-4 border-t border-slate-800 text-[11px] text-slate-500">
+            <div className="mt-6 text-center pt-4 border-t border-border text-[11px] text-text-secondary">
               <p>Restricted access. All authentication attempts are logged for security compliance.</p>
             </div>
           </CardContent>

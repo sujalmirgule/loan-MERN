@@ -1,69 +1,75 @@
 import React from 'react';
-import { Badge } from '@/components/ui/badge';
 import { LoanStatus } from '@/api/loanApi';
 
 interface LoanStatusBadgeProps {
-  status: LoanStatus;
+  status: LoanStatus | string;
   className?: string;
 }
 
-export const LoanStatusBadge: React.FC<LoanStatusBadgeProps> = ({ status, className }) => {
-  switch (status) {
+export const LoanStatusBadge: React.FC<LoanStatusBadgeProps> = ({ status, className = '' }) => {
+  const s = String(status || '').toUpperCase();
+
+  switch (s) {
+    case 'PENDING':
     case 'SUBMITTED':
+    case 'NEW':
       return (
-        <Badge variant="secondary" className={`bg-blue-50 text-blue-700 border-blue-200 ${className || ''}`}>
-          Submitted
-        </Badge>
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 uppercase tracking-wide ${className}`}
+        >
+          Pending
+        </span>
       );
+
     case 'UNDER_REVIEW':
-      return (
-        <Badge variant="secondary" className={`bg-purple-50 text-purple-700 border-purple-200 ${className || ''}`}>
-          Under Review
-        </Badge>
-      );
     case 'DOCUMENTS_REQUIRED':
-      return (
-        <Badge variant="destructive" className={`bg-orange-50 text-orange-700 border-orange-200 ${className || ''}`}>
-          Documents Required
-        </Badge>
-      );
     case 'ON_HOLD':
       return (
-        <Badge variant="outline" className={`bg-amber-50 text-amber-800 border-amber-300 ${className || ''}`}>
-          On Hold
-        </Badge>
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-900 border border-blue-300 uppercase tracking-wide ${className}`}
+        >
+          Under Review
+        </span>
       );
+
     case 'APPROVED':
-      return (
-        <Badge variant="success" className={`bg-emerald-50 text-emerald-700 border-emerald-200 ${className || ''}`}>
-          Approved
-        </Badge>
-      );
-    case 'REJECTED':
-      return (
-        <Badge variant="destructive" className={`bg-rose-50 text-rose-700 border-rose-200 ${className || ''}`}>
-          Rejected
-        </Badge>
-      );
+    case 'OFFER_ACCEPTED':
     case 'OFFER_PENDING_CUSTOMER':
       return (
-        <Badge className={`bg-emerald-600 text-white hover:bg-emerald-700 font-semibold animate-pulse ${className || ''}`}>
-          Offer Available
-        </Badge>
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-900 border border-emerald-300 uppercase tracking-wide ${className}`}
+        >
+          Approved
+        </span>
       );
-    case 'OFFER_ACCEPTED':
+
+    case 'DISBURSED':
+    case 'ACTIVE':
       return (
-        <Badge variant="success" className={`bg-emerald-100 text-emerald-800 border-emerald-300 ${className || ''}`}>
-          Offer Accepted
-        </Badge>
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-900 border border-emerald-400 uppercase tracking-wide ${className}`}
+        >
+          Disbursed
+        </span>
       );
+
+    case 'REJECTED':
     case 'OFFER_REJECTED':
       return (
-        <Badge variant="secondary" className={`bg-slate-100 text-slate-600 border-slate-300 ${className || ''}`}>
-          Offer Rejected
-        </Badge>
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-900 border border-red-300 uppercase tracking-wide ${className}`}
+        >
+          Rejected
+        </span>
       );
+
     default:
-      return <Badge variant="outline" className={className}>{status}</Badge>;
+      return (
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-300 uppercase tracking-wide ${className}`}
+        >
+          {status}
+        </span>
+      );
   }
 };

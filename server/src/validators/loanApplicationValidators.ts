@@ -37,9 +37,10 @@ export const adminFilterSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(10),
   search: z.string().trim().optional(),
-  status: LoanStatusEnum.optional(),
+  status: z.enum([...LoanStatusEnum.options, 'PENDING']).optional(),
   state: z.string().trim().optional(),
   city: z.string().trim().optional(),
+  loanType: z.string().trim().optional(),
   dateFilter: z.enum(['TODAY', 'YESTERDAY', 'LAST_7_DAYS', 'LAST_30_DAYS', 'CUSTOM']).optional(),
   startDate: z.string().trim().optional(),
   endDate: z.string().trim().optional(),
@@ -57,13 +58,16 @@ export const holdApplicationSchema = z.object({
 
 export type HoldApplicationInput = z.infer<typeof holdApplicationSchema>;
 
-export const rejectApplicationSchema = z.object({
-  rejectionReason: z
-    .string({ required_error: 'Rejection reason is mandatory' })
-    .trim()
-    .min(3, 'Rejection reason must be at least 3 characters')
-    .max(500, 'Rejection reason cannot exceed 500 characters'),
-});
+export const rejectApplicationSchema = z
+  .object({
+    rejectionReason: z.string().trim().min(3, 'Rejection reason must be at least 3 characters').optional(),
+    reason: z.string().trim().min(3, 'Rejection reason must be at least 3 characters').optional(),
+    adminRemark: z.string().trim().optional(),
+  })
+  .refine((data) => !!(data.rejectionReason || data.reason), {
+    message: 'Rejection reason is mandatory',
+    path: ['rejectionReason'],
+  });
 
 export type RejectApplicationInput = z.infer<typeof rejectApplicationSchema>;
 

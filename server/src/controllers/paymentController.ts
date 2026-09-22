@@ -18,7 +18,59 @@ export class PaymentController {
   }
 
   /**
-   * Customer: Submit UTR reference.
+   * Customer: Initiate a Single UPI Payment Request (POST /api/customer/payments/upi)
+   * Amount is strictly derived from the database (tamper-proof).
+   */
+  async createUpiPayment(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const { chargeId, loanId } = req.body;
+      const data = await paymentService.createUpiPayment(
+        req.user.id,
+        { chargeId, loanId },
+        req.user,
+        req.ip
+      );
+      res.status(201).json({
+        success: true,
+        message: 'UPI payment initiated successfully.',
+        data,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Customer: Submit UTR reference by Payment ID (POST /api/customer/payments/:paymentId/utr)
+   */
+  async submitPaymentIdUtr(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const paymentId = req.params.paymentId as string;
+      const { utr, notes } = req.body;
+      if (!utr || typeof utr !== 'string') {
+        throw new AppError(400, 'UTR number is required.');
+      }
+      const data = await paymentService.submitPaymentUtr(
+        req.user.id,
+        paymentId,
+        { utr, notes },
+        req.user,
+        req.ip
+      );
+      res.status(200).json({
+        success: true,
+        message: 'Payment reference submitted successfully. Verification in progress.',
+        data,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Customer: Submit UTR reference by Loan ID (POST /api/customer/payments/:loanId/submit-utr)
    */
   async submitUtr(req: Request, res: Response, next: NextFunction) {
     try {
@@ -36,16 +88,18 @@ export class PaymentController {
   }
 
   /**
-   * Admin: List payments.
+   * Admin: List pending payments requiring manual UTR verification (GET /api/admin/payments/pending)
    */
-  async listPayments(req: Request, res: Response, next: NextFunction) {
+  async listPendingPayments(req: Request, res: Response, next: NextFunction) {
     try {
-      const { status, search, page, limit } = req.query;
-      const data = await paymentService.listPayments({
-        status: status as string,
+      const { search, page, limit, state, fromDate, toDate } = req.query;
+      const data = await paymentService.listPendingPayments({
         search: search as string,
         page: page ? Number(page) : undefined,
         limit: limit ? Number(limit) : undefined,
+        state: state as string,
+        fromDate: fromDate as string,
+        toDate: toDate as string,
       });
       res.status(200).json({ success: true, data: data.payments, pagination: data.pagination });
     } catch (err) {
@@ -54,7 +108,28 @@ export class PaymentController {
   }
 
   /**
-   * Admin: Verify payment (triggers atomic auto-approval & One Approved Loan check).
+   * Admin: List all payments with filtering (GET /api/admin/payments)
+   */
+  async listPayments(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { status, search, page, limit, state, fromDate, toDate } = req.query;
+      const data = await paymentService.listPayments({
+        status: status as string,
+        search: search as string,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+        state: state as string,
+        fromDate: fromDate as string,
+        toDate: toDate as string,
+      });
+      res.status(200).json({ success: true, data: data.payments, pagination: data.pagination });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Verify payment (PATCH/POST /api/admin/payments/:id/verify)
    */
   async verifyPayment(req: Request, res: Response, next: NextFunction) {
     try {
@@ -62,7 +137,7 @@ export class PaymentController {
       const result = await paymentService.verifyPayment(req.params.id as string, req.user, req.ip);
       res.status(200).json({
         success: true,
-        message: 'Payment verified and loan application automatically approved successfully.',
+        message: 'Payment verified and marked as PAID successfully.',
         data: result,
       });
     } catch (err) {
@@ -71,7 +146,7 @@ export class PaymentController {
   }
 
   /**
-   * Admin: Reject payment with reason.
+   * Admin: Reject payment with reason (PATCH/POST /api/admin/payments/:id/reject)
    */
   async rejectPayment(req: Request, res: Response, next: NextFunction) {
     try {
@@ -80,7 +155,7 @@ export class PaymentController {
       const result = await paymentService.rejectPayment(req.params.id as string, input, req.user, req.ip);
       res.status(200).json({
         success: true,
-        message: 'Payment marked as rejected. Borrower has been notified.',
+        message: 'Payment marked as rejected. Customer has been notified.',
         data: result,
       });
     } catch (err) {

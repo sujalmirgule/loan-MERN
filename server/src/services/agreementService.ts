@@ -31,11 +31,15 @@ export class AgreementService {
     const emi = loan.finalEmi || loan.estimatedEmi || 0;
     const now = new Date();
 
+    // Fetch branding for dynamic company name
+    const branding = await prisma.brandingSettings.findUnique({ where: { id: 'default' } });
+    const companyName = branding?.companyName || 'Your Financial Services';
+
     if (!agreement) {
       const agreementHtml = `
         <div class="agreement-document font-sans text-slate-800 p-4">
           <h2 class="text-xl font-bold mb-3">LOAN SANCTION & BORROWER AGREEMENT</h2>
-          <p class="text-sm mb-2">This Master Loan Agreement is executed on <strong>${now.toLocaleDateString('en-IN')}</strong> between <strong>Loan Approve Financial Services</strong> (Lender) and <strong>${loan.customer.fullName}</strong> (Borrower).</p>
+          <p class="text-sm mb-2">This Master Loan Agreement is executed on <strong>${now.toLocaleDateString('en-IN')}</strong> between <strong>${companyName}</strong> (Lender) and <strong>${loan.customer.fullName}</strong> (Borrower).</p>
           <div class="grid grid-cols-2 gap-2 my-4 p-3 bg-slate-50 border rounded text-xs">
             <div><strong>Application No:</strong> ${loan.applicationNumber}</div>
             <div><strong>Sanctioned Amount:</strong> ₹${sanctionedAmount.toLocaleString('en-IN')}</div>

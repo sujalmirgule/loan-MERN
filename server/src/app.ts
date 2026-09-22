@@ -2,6 +2,8 @@ import express, { Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
+import path from 'path';
+import fs from 'fs';
 import { config } from './config';
 import { globalLimiter } from './middleware/rateLimiter';
 import { errorHandler } from './middleware/errorHandler';
@@ -18,14 +20,18 @@ export function createApp(): Express {
     })
   );
 
-  // CORS configuration (Strict client origin allowed)
-  const allowedOrigins = [config.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'];
+  // CORS configuration (Strict client origin allowed with seamless localhost port support)
+  const allowedOrigins = [config.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174', 'http://localhost:5175', 'http://127.0.0.1:5175'];
   app.use(
     cors({
       origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps, curl, or server-to-server)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+        if (
+          allowedOrigins.indexOf(origin) !== -1 ||
+          process.env.NODE_ENV === 'development' ||
+          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+        ) {
           return callback(null, true);
         }
         return callback(new Error(`CORS policy blocked access from origin: ${origin}`));
@@ -47,6 +53,13 @@ export function createApp(): Express {
   if (config.NODE_ENV !== 'test') {
     app.use(morgan('dev'));
   }
+
+  // Serve branding assets (logos, favicons) as public static files
+  const brandingDir = path.join(process.cwd(), 'uploads', 'branding');
+  if (!fs.existsSync(brandingDir)) {
+    fs.mkdirSync(brandingDir, { recursive: true });
+  }
+  app.use('/uploads/branding', express.static(brandingDir, { maxAge: '1d' }));
 
   // API Routes
   app.use('/api', apiRouter);

@@ -2,6 +2,7 @@ import { prisma } from './db';
 import { AppError } from '../middleware/errorHandler';
 import { auditService } from './auditService';
 import { DocumentType } from '../validators/documentValidators';
+import { specificChargesService } from './specificChargesService';
 
 export const adminKycService = {
   /**
@@ -22,7 +23,20 @@ export const adminKycService = {
     };
 
     if (filters.status && filters.status !== 'ALL') {
-      where.kycStatus = filters.status;
+      const s = filters.status.toUpperCase();
+      if (s === 'PENDING_VERIFICATION') {
+        where.kycStatus = { in: ['PENDING', 'UNDER_REVIEW'] };
+      } else if (s === 'PENDING_APPROVAL') {
+        where.kycStatus = { in: ['PENDING', 'UNDER_REVIEW'] };
+      } else if (s === 'VERIFIED') {
+        where.kycStatus = { in: ['APPROVED', 'VERIFIED'] };
+      } else if (s === 'REJECTED') {
+        where.kycStatus = 'REJECTED';
+      } else if (s === 'CORRECTION_REQUIRED' || s === 'REUPLOAD_REQUIRED') {
+        where.kycStatus = 'REUPLOAD_REQUIRED';
+      } else {
+        where.kycStatus = filters.status;
+      }
     }
 
     if (filters.search && filters.search.trim().length > 0) {
@@ -31,10 +45,21 @@ export const adminKycService = {
         { fullName: { contains: term } },
         { mobile: { contains: term } },
         { email: { contains: term } },
+        { state: { contains: term } },
       ];
     }
 
-    const [total, customers] = await Promise.all([
+    const [
+      total,
+      customers,
+      allCount,
+      pendingVerificationCount,
+      pendingApprovalCount,
+      verifiedCount,
+      rejectedCount,
+      correctionRequiredCount,
+      paymentPendingCount,
+    ] = await Promise.all([
       prisma.customer.count({ where }),
       prisma.customer.findMany({
         where,
@@ -48,16 +73,73 @@ export const adminKycService = {
           email: true,
           state: true,
           city: true,
+          aadhaarMasked: true,
+          panMasked: true,
           status: true,
           kycStatus: true,
           createdAt: true,
           updatedAt: true,
+          loans: {
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              applicationNumber: true,
+              loanType: true,
+              status: true,
+              requestedAmount: true,
+            },
+          },
+          charges: {
+            where: {
+              OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }],
+            },
+            select: {
+              id: true,
+              name: true,
+              amount: true,
+              status: true,
+              transactionRef: true,
+            },
+          },
           documents: {
             where: { isCurrentVersion: true },
             select: {
               id: true,
               documentType: true,
+              fileName: true,
+              mimeType: true,
               status: true,
+              uploadedAt: true,
+              rejectionReason: true,
+            },
+          },
+        },
+      }),
+      prisma.customer.count({ where: { isDeleted: false } }),
+      prisma.customer.count({
+        where: { isDeleted: false, kycStatus: { in: ['PENDING', 'UNDER_REVIEW'] } },
+      }),
+      prisma.customer.count({
+        where: { isDeleted: false, kycStatus: { in: ['PENDING', 'UNDER_REVIEW'] } },
+      }),
+      prisma.customer.count({
+        where: { isDeleted: false, kycStatus: { in: ['APPROVED', 'VERIFIED'] } },
+      }),
+      prisma.customer.count({
+        where: { isDeleted: false, kycStatus: 'REJECTED' },
+      }),
+      prisma.customer.count({
+        where: { isDeleted: false, kycStatus: 'REUPLOAD_REQUIRED' },
+      }),
+      prisma.customer.count({
+        where: {
+          isDeleted: false,
+          kycStatus: { in: ['PENDING', 'UNDER_REVIEW'] },
+          charges: {
+            some: {
+              OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }],
+              status: { not: 'PAID' },
             },
           },
         },
@@ -65,11 +147,42 @@ export const adminKycService = {
     ]);
 
     const formatted = customers.map((c) => {
-      const totalDocs = c.documents.length;
-      const approvedDocs = c.documents.filter((d) => d.status === 'APPROVED').length;
-      const pendingDocs = c.documents.filter((d) => d.status === 'PENDING' || d.status === 'UNDER_REVIEW').length;
-      const reuploadRequiredDocs = c.documents.filter((d) => d.status === 'REUPLOAD_REQUIRED').length;
-      const rejectedDocs = c.documents.filter((d) => d.status === 'REJECTED').length;
+      const kycDocs = c.documents.filter(
+        (d) => d.documentType === 'AADHAAR_FRONT' || d.documentType === 'AADHAAR_BACK'
+      );
+      const totalDocs = kycDocs.length;
+      const approvedDocs = kycDocs.filter((d) => d.status === 'APPROVED').length;
+      const pendingDocs = kycDocs.filter(
+        (d) => d.status === 'PENDING' || d.status === 'UNDER_REVIEW'
+      ).length;
+      const reuploadRequiredDocs = kycDocs.filter(
+        (d) => d.status === 'REUPLOAD_REQUIRED'
+      ).length;
+      const rejectedDocs = kycDocs.filter((d) => d.status === 'REJECTED').length;
+
+      const hasAadhaar =
+        !!c.aadhaarMasked || c.documents.some((d) => d.documentType.startsWith('AADHAAR'));
+      const kycType = hasAadhaar ? 'Aadhaar (Front + Back)' : 'Standard KYC';
+
+      const latestLoan = c.loans[0] || null;
+      const kycCharge = c.charges?.[0] || null;
+      const isKycFeePaid = kycCharge?.status === 'PAID';
+      const utr = kycCharge?.transactionRef?.trim() || null;
+      const hasUtr = Boolean(utr && utr.length > 0);
+
+      const kycPaymentStatus = isKycFeePaid
+        ? 'PAID'
+        : hasUtr
+        ? 'UNDER_VERIFICATION'
+        : kycCharge?.status === 'FAILED' || kycCharge?.status === 'REJECTED'
+        ? 'REJECTED'
+        : 'NOT_PAID';
+
+      const utrStatus = isKycFeePaid
+        ? 'VERIFIED'
+        : hasUtr
+        ? 'SUBMITTED'
+        : 'NOT_SUBMITTED';
 
       return {
         id: c.id,
@@ -78,10 +191,28 @@ export const adminKycService = {
         email: c.email,
         state: c.state,
         city: c.city,
+        aadhaarMasked: c.aadhaarMasked,
+        panMasked: c.panMasked,
         accountStatus: c.status,
         kycStatus: c.kycStatus,
+        isKycFeePaid,
+        hasUtr,
+        utr,
+        kycPaymentStatus,
+        utrStatus,
+        kycChargeStatus: kycCharge?.status || 'PENDING',
+        kycChargeAmount: kycCharge?.amount || 500,
+        kycChargeId: kycCharge?.id || null,
+        kycType,
+        applicationId: latestLoan?.applicationNumber || 'N/A',
+        loanId: latestLoan?.id || null,
+        loanType: latestLoan?.loanType || 'Personal Loan',
+        loanStatus: latestLoan?.status || null,
+        requestedAmount: latestLoan?.requestedAmount || null,
+        submittedAt: c.documents[0]?.uploadedAt || c.updatedAt || c.createdAt,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
+        documents: c.documents,
         docStats: {
           total: totalDocs,
           approved: approvedDocs,
@@ -94,6 +225,15 @@ export const adminKycService = {
 
     return {
       customers: formatted,
+      counts: {
+        all: allCount,
+        pendingVerification: pendingVerificationCount,
+        pendingApproval: pendingApprovalCount,
+        paymentPending: paymentPendingCount,
+        verified: verifiedCount,
+        rejected: rejectedCount,
+        correctionRequired: correctionRequiredCount,
+      },
       pagination: {
         total,
         page,
@@ -116,6 +256,20 @@ export const adminKycService = {
         documentRequests: {
           orderBy: { createdAt: 'desc' },
         },
+        charges: {
+          where: {
+            OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }],
+          },
+          select: {
+            id: true,
+            name: true,
+            amount: true,
+            status: true,
+            transactionRef: true,
+            paidAt: true,
+            paymentId: true,
+          },
+        },
       },
     });
 
@@ -123,9 +277,16 @@ export const adminKycService = {
       throw new AppError(404, 'Customer record not found');
     }
 
-    // Separate active versions from historical archived versions
-    const activeDocuments = customer.documents.filter((d) => d.isCurrentVersion);
-    const documentHistory = customer.documents.filter((d) => !d.isCurrentVersion);
+    // Separate active versions from historical archived versions (KYC identity documents only: AADHAAR_FRONT, AADHAAR_BACK)
+    const isKycDoc = (d: { documentType: string }) =>
+      d.documentType === 'AADHAAR_FRONT' || d.documentType === 'AADHAAR_BACK';
+    const activeDocuments = customer.documents.filter((d) => d.isCurrentVersion && isKycDoc(d));
+    const documentHistory = customer.documents.filter((d) => !d.isCurrentVersion && isKycDoc(d));
+
+    const kycCharge = customer.charges?.[0] || null;
+    const utr = kycCharge?.transactionRef?.trim() || null;
+    const hasUtr = Boolean(utr && utr.length > 0);
+    const isKycFeePaid = kycCharge?.status === 'PAID';
 
     return {
       customer: {
@@ -142,6 +303,19 @@ export const adminKycService = {
         kycStatus: customer.kycStatus,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt,
+      },
+      kycPayment: {
+        chargeId: kycCharge?.id || null,
+        amount: kycCharge?.amount || 500,
+        utr: utr || 'Not Provided',
+        hasUtr,
+        status: kycCharge?.status || 'PENDING',
+        isPaid: isKycFeePaid,
+        paymentStatus: isKycFeePaid
+          ? 'PAID / Verified'
+          : hasUtr
+          ? 'Pending Verification'
+          : 'Payment Required',
       },
       documents: activeDocuments.map((d) => ({
         id: d.id,
@@ -277,7 +451,7 @@ export const adminKycService = {
     if (!customer) return;
 
     const docs = customer.documents;
-    const requiredTypes = ['AADHAAR_FRONT', 'AADHAAR_BACK', 'PAN'];
+    const requiredTypes = ['AADHAAR_FRONT', 'AADHAAR_BACK'];
 
     let targetKycStatus = customer.kycStatus;
 
@@ -293,7 +467,23 @@ export const adminKycService = {
       });
 
       if (allRequiredApproved) {
-        targetKycStatus = 'APPROVED';
+        // STRICT PAYMENT GATE: Admin/System can ONLY approve KYC if KYC fee is PAID
+        const kycCharge = await prisma.charge.findFirst({
+          where: {
+            customerId,
+            OR: [
+              { name: { contains: 'KYC' } },
+              { remark: { contains: 'KYC' } },
+            ],
+          },
+        });
+
+        if (kycCharge && kycCharge.status === 'PAID') {
+          targetKycStatus = 'APPROVED';
+        } else {
+          // Documents approved, but payment is still pending. Status remains UNDER_REVIEW
+          targetKycStatus = 'UNDER_REVIEW';
+        }
       } else if (docs.length > 0) {
         targetKycStatus = 'UNDER_REVIEW';
       }
@@ -317,7 +507,51 @@ export const adminKycService = {
           newValue: { kycStatus: targetKycStatus },
           ipAddress,
         });
+
+        if (targetKycStatus === 'APPROVED') {
+          await this.ensureKycChargeActivated(customerId);
+        }
       }
+    }
+  },
+
+  /**
+   * Activates the KYC Verification Charge for a customer upon successful KYC approval.
+   */
+  async ensureKycChargeActivated(customerId: string) {
+    const existing = await prisma.charge.findFirst({
+      where: {
+        customerId,
+        OR: [
+          { name: { contains: 'KYC' } },
+          { remark: { contains: 'KYC' } },
+        ],
+      },
+    });
+
+    if (!existing) {
+      const paymentConfig = await prisma.paymentConfig.findUnique({ where: { id: 'default' } });
+      const kycAmount = paymentConfig?.kycChargeAmount || 499;
+
+      const latestLoan = await prisma.loanApplication.findFirst({
+        where: { customerId },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      await prisma.charge.create({
+        data: {
+          name: 'KYC Verification Charge',
+          amount: kycAmount,
+          type: 'FIXED',
+          isMandatory: true,
+          isActive: true,
+          status: 'PENDING',
+          customerId,
+          loanId: latestLoan?.id || null,
+          remark: 'Mandatory KYC Verification Fee',
+          sentAt: new Date(),
+        },
+      });
     }
   },
 
@@ -357,6 +591,21 @@ export const adminKycService = {
       });
     }
 
+    // Customer Notification
+    try {
+      await prisma.notification.create({
+        data: {
+          recipientType: 'CUSTOMER',
+          customerId: customer.id,
+          title: `Additional KYC Document Requested: ${data.title}`,
+          message: `Dear ${customer.fullName}, our verification team has requested an additional document (${data.documentType}): ${data.title}. ${data.description ? `Note: ${data.description}` : ''}`,
+          eventType: 'KYC_STATUS',
+        },
+      });
+    } catch {
+      // Non-blocking notification
+    }
+
     await auditService.record({
       actorType: 'ADMIN',
       actorId: admin.id,
@@ -394,26 +643,210 @@ export const adminKycService = {
       throw new AppError(404, 'Customer record not found');
     }
 
+    const isApproval = status === 'APPROVED' || status === 'VERIFIED';
+
+    if (isApproval) {
+      // 1. Verify Aadhaar Front and Aadhaar Back are uploaded
+      const aadhaarFront = await prisma.loanDocument.findFirst({
+        where: { customerId, documentType: 'AADHAAR_FRONT', isCurrentVersion: true },
+      });
+      const aadhaarBack = await prisma.loanDocument.findFirst({
+        where: { customerId, documentType: 'AADHAAR_BACK', isCurrentVersion: true },
+      });
+
+      if (!aadhaarFront || !aadhaarBack) {
+        throw new AppError(
+          400,
+          'Cannot approve KYC: Both Aadhaar Front and Aadhaar Back must be uploaded.'
+        );
+      }
+
+      // 2. Check KYC charge & UTR
+      let kycCharge = await prisma.charge.findFirst({
+        where: {
+          customerId,
+          OR: [
+            { name: { contains: 'KYC' } },
+            { remark: { contains: 'KYC' } },
+          ],
+        },
+      });
+
+      if (!kycCharge) {
+        await this.ensureKycChargeActivated(customerId);
+        kycCharge = await prisma.charge.findFirst({
+          where: {
+            customerId,
+            OR: [
+              { name: { contains: 'KYC' } },
+              { remark: { contains: 'KYC' } },
+            ],
+          },
+        });
+      }
+
+      if (!kycCharge) {
+        throw new AppError(400, 'KYC Verification Fee record not found.');
+      }
+
+      // 3. Payment / UTR verification
+      if (kycCharge.status !== 'PAID') {
+        const utr = kycCharge.transactionRef?.trim() || null;
+        if (!utr) {
+          throw new AppError(400, 'UTR number is required before KYC approval.');
+        }
+
+        // Format validation: 8 to 30 alphanumeric characters
+        const utrRegex = /^[A-Za-z0-9]{8,30}$/;
+        if (!utrRegex.test(utr)) {
+          throw new AppError(
+            400,
+            'Invalid UTR format: Transaction reference must be a valid 8 to 30 character alphanumeric/numeric code.'
+          );
+        }
+
+        // Uniqueness validation: UTR is not already used by another customer
+        const duplicatePayment = await prisma.payment.findFirst({
+          where: {
+            transactionRef: utr,
+            customerId: { not: customerId },
+            status: { in: ['PAID', 'SUCCESS', 'UNDER_VERIFICATION'] },
+          },
+        });
+        if (duplicatePayment) {
+          throw new AppError(
+            400,
+            'Duplicate UTR: This transaction reference is already linked to another customer payment.'
+          );
+        }
+
+        // Validate payment/charge amount
+        if (!kycCharge.amount || kycCharge.amount <= 0) {
+          throw new AppError(400, 'Invalid KYC charge amount.');
+        }
+
+        // Verify the payment authoritative using specificChargesService (marks PAID & generates 1:1 invoice)
+        await specificChargesService.verifySpecificChargePayment(
+          kycCharge.id,
+          {
+            id: admin.id,
+            fullName: admin.fullName,
+            email: 'admin@system.local',
+            role: 'ADMIN',
+          },
+          ipAddress
+        );
+      } else {
+        // Ensure immutable 1:1 invoice is persisted if charge was already marked PAID
+        const existingInvoice = await prisma.invoice.findUnique({ where: { chargeId: kycCharge.id } });
+        if (!existingInvoice) {
+          await specificChargesService.verifySpecificChargePayment(
+            kycCharge.id,
+            {
+              id: admin.id,
+              fullName: admin.fullName,
+              email: 'admin@system.local',
+              role: 'ADMIN',
+            },
+            ipAddress
+          );
+        }
+      }
+    }
+
+    const finalKycStatus = isApproval ? 'APPROVED' : status;
+
     await prisma.customer.update({
       where: { id: customerId },
-      data: { kycStatus: status },
+      data: { kycStatus: finalKycStatus },
     });
+
+    // Cascade document status if needed for KYC identity documents only
+    const kycDocFilter = {
+      customerId,
+      isCurrentVersion: true,
+      documentType: { in: ['AADHAAR_FRONT', 'AADHAAR_BACK'] },
+      status: { in: ['PENDING', 'UNDER_REVIEW'] },
+    };
+
+    if (isApproval) {
+      await prisma.loanDocument.updateMany({
+        where: kycDocFilter,
+        data: {
+          status: 'APPROVED',
+          reviewedBy: admin.fullName,
+          reviewedAt: new Date(),
+          rejectionReason: null,
+        },
+      });
+      await this.ensureKycChargeActivated(customerId);
+    } else if (status === 'REJECTED') {
+      await prisma.loanDocument.updateMany({
+        where: kycDocFilter,
+        data: {
+          status: 'REJECTED',
+          reviewedBy: admin.fullName,
+          reviewedAt: new Date(),
+          rejectionReason: reason || 'KYC verification declined by compliance officer',
+        },
+      });
+    } else if (status === 'REUPLOAD_REQUIRED') {
+      await prisma.loanDocument.updateMany({
+        where: kycDocFilter,
+        data: {
+          status: 'REUPLOAD_REQUIRED',
+          reviewedBy: admin.fullName,
+          reviewedAt: new Date(),
+          rejectionReason: reason || 'Re-upload required',
+        },
+      });
+    }
+
+    // Customer Notification
+    try {
+      await prisma.notification.create({
+        data: {
+          recipientType: 'CUSTOMER',
+          customerId: customer.id,
+          title:
+            isApproval
+              ? 'KYC Verification Approved'
+              : status === 'REJECTED'
+              ? 'KYC Verification Rejected'
+              : 'KYC Document Correction Required',
+          message:
+            isApproval
+              ? 'KYC verification completed successfully.'
+              : status === 'REJECTED'
+              ? `Dear ${customer.fullName}, your KYC verification was declined. Reason: ${reason || 'Does not meet verification criteria.'}`
+              : `Dear ${customer.fullName}, action is required on your KYC documents. Reason: ${reason || 'Please re-upload a clear copy.'}`,
+          eventType: 'KYC_STATUS',
+        },
+      });
+    } catch {
+      // Non-blocking notification
+    }
+
+    let auditAction = 'KYC_STATUS_UPDATED';
+    if (isApproval) auditAction = 'KYC_APPROVED';
+    else if (status === 'REJECTED') auditAction = 'KYC_REJECTED';
+    else if (status === 'REUPLOAD_REQUIRED') auditAction = 'KYC_CORRECTION_REQUESTED';
 
     await auditService.record({
       actorType: 'ADMIN',
       actorId: admin.id,
       actorName: admin.fullName,
-      action: status === 'APPROVED' ? 'KYC_APPROVED' : 'KYC_REJECTED',
+      action: auditAction,
       entity: 'Customer',
       entityId: customer.id,
       previousValue: { kycStatus: customer.kycStatus },
-      newValue: { kycStatus: status, reason },
+      newValue: { kycStatus: finalKycStatus, reason: reason || (isApproval ? 'KYC Verified' : undefined) },
       ipAddress,
     });
 
     return {
       customerId: customer.id,
-      kycStatus: status,
+      kycStatus: finalKycStatus,
     };
   },
 };

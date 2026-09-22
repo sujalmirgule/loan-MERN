@@ -4,48 +4,117 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 158 84% 28%; /* Emerald 700 / Fintech Green */
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222 47% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 158 84% 95%;
-    --accent-foreground: 158 84% 25%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 158 84% 28%;
-    --radius: 0.625rem;
+    /* Global Color System: Light Blue + Dark Blue + White */
+    --background: #F7FAFC;
+    --surface: #FFFFFF;
+    --surface-elevated: #F0F6FC;
+    
+    --primary: #0B1F3A;
+    --primary-light: #EAF4FF;
+    --primary-accent: #2563EB;
+    --secondary: #123B66;
+    --soft-blue: #DCEEFF;
+    
+    --success: #16A34A;
+    --warning: #D97706;
+    --danger: #DC2626;
+    
+    --text-primary: #0F172A;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
+    
+    --border: #D6E4F5;
+    --input: #FFFFFF;
+    --input-border: #CBDDE9;
+    --focus: #2563EB;
+    --radius: 0.75rem;
+
+    /* Semantic tokens for components */
+    --card: #FFFFFF;
+    --card-foreground: #0F172A;
+    --popover: #FFFFFF;
+    --popover-foreground: #0F172A;
+    --muted: #EFF6FF;
+    --muted-foreground: #475569;
+    --accent: #EFF6FF;
+    --accent-foreground: #2563EB;
+    --destructive: #DC2626;
+    --destructive-foreground: #FFFFFF;
+    --ring: #2563EB;
   }
 
-  .dark {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 13%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 13%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 158 75% 40%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 158 75% 20%;
-    --accent-foreground: 158 75% 85%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 158 75% 40%;
+  .theme-admin {
+    --background: #F7FAFF;
+    --surface: #FFFFFF;
+    --surface-elevated: #EFF6FF;
+    
+    --primary: #2563EB;
+    --primary-light: #EFF6FF;
+    --primary-accent: #1D4ED8;
+    --secondary: #1D4ED8;
+    --soft-blue: #EFF6FF;
+    
+    --success: #16A34A;
+    --warning: #D97706;
+    --danger: #DC2626;
+    
+    --text-primary: #0F172A;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
+    
+    --border: #D6E4F5;
+    --input: #FFFFFF;
+    --input-border: #D6E4F5;
+    --focus: #2563EB;
+    
+    --card: #FFFFFF;
+    --card-foreground: #0F172A;
+    --popover: #FFFFFF;
+    --popover-foreground: #0F172A;
+    --muted: #EFF6FF;
+    --muted-foreground: #475569;
+    --accent: #EFF6FF;
+    --accent-foreground: #2563EB;
+    --destructive: #DC2626;
+    --destructive-foreground: #FFFFFF;
+    --ring: #2563EB;
+  }
+
+  .theme-customer {
+    --background: #F7FAFC;
+    --surface: #FFFFFF;
+    --surface-elevated: #F0F6FC;
+    
+    --primary: #0B1F3A;
+    --primary-light: #EAF4FF;
+    --primary-accent: #2563EB;
+    --secondary: #123B66;
+    --soft-blue: #DCEEFF;
+    
+    --success: #16A34A;
+    --warning: #D97706;
+    --danger: #DC2626;
+    
+    --text-primary: #0B1F3A;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
+    
+    --border: #D9E6F2;
+    --input: #FFFFFF;
+    --input-border: #CBDDE9;
+    --focus: #2563EB;
+    
+    --card: #FFFFFF;
+    --card-foreground: #0B1F3A;
+    --popover: #FFFFFF;
+    --popover-foreground: #0B1F3A;
+    --muted: #EAF4FF;
+    --muted-foreground: #475569;
+    --accent: #EAF4FF;
+    --accent-foreground: #2563EB;
+    --destructive: #DC2626;
+    --destructive-foreground: #FFFFFF;
+    --ring: #2563EB;
   }
 }
 
@@ -54,12 +123,50 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    @apply bg-background text-text-primary;
+    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text-primary);
   }
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Outfit', sans-serif;
+    font-family: 'Plus Jakarta Sans', 'Outfit', sans-serif;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    font-weight: 700;
   }
+  label {
+    color: #1E293B;
+    font-weight: 600;
+  }
+}
+
+/* Premium FinTech Utilities */
+.fintech-glass {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.fintech-dark-card {
+  background: linear-gradient(145deg, #0B1F3A 0%, #123B66 100%);
+  color: #FFFFFF;
+}
+
+.fintech-gradient-text {
+  background: linear-gradient(135deg, #0B1F3A 0%, #2563EB 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.fintech-grid-pattern {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(37, 99, 235, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.04) 1px, transparent 1px);
+}
+
+.fintech-dot-pattern {
+  background-size: 24px 24px;
+  background-image: radial-gradient(rgba(37, 99, 235, 0.08) 1.5px, transparent 1.5px);
 }
 
 /* Custom scrollbars */
@@ -71,9 +178,10 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
+  background: #CBD5E1;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  background: #94A3B8;
 }
+

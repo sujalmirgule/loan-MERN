@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
+import { useBrandTitle } from '@/hooks/useBrandTitle';
 
 const profileFormSchema = z.object({
   fullName: z
@@ -83,6 +84,7 @@ interface CustomerProfileData {
 }
 
 export const CustomerProfile: React.FC = () => {
+  useBrandTitle('My Profile');
   const { updateUser } = useAuth();
   const [profile, setProfile] = useState<CustomerProfileData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -109,11 +111,14 @@ export const CustomerProfile: React.FC = () => {
     try {
       setIsLoading(true);
       setErrorMessage(null);
+      // Backend returns: { success: true, data: { profile: {...} } }
+      // apiClient.get returns the full body, so res = { success, data: { profile } }
       const res = await apiClient.get(API_ENDPOINTS.CUSTOMERS.PROFILE);
-      const data = res.data.data.profile;
+      const data: CustomerProfileData =
+        res.data?.data?.profile || res.data?.profile || res.data?.data || res.data;
       setProfile(data);
       reset({
-        fullName: data.fullName,
+        fullName: data.fullName || '',
         email: data.email,
         address: data.address,
         state: data.state,
@@ -123,7 +128,7 @@ export const CustomerProfile: React.FC = () => {
       });
     } catch (err: unknown) {
       const errorMsg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err as { message?: string })?.message ||
         'Failed to load customer profile';
       setErrorMessage(errorMsg);
     } finally {
@@ -161,7 +166,8 @@ export const CustomerProfile: React.FC = () => {
       }
 
       const res = await apiClient.patch(API_ENDPOINTS.CUSTOMERS.UPDATE, payload);
-      const updated = res.data.data.profile;
+      const updated: CustomerProfileData =
+        res.data?.data?.profile || res.data?.profile || res.data?.data || res.data;
       setProfile(updated);
       updateUser(updated);
 
@@ -206,7 +212,7 @@ export const CustomerProfile: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-3">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-sm text-slate-500 font-medium">Loading profile details...</p>
+        <p className="text-sm text-text-secondary font-medium">Loading profile details...</p>
       </div>
     );
   }
@@ -216,7 +222,7 @@ export const CustomerProfile: React.FC = () => {
       <div className="p-6 max-w-2xl mx-auto text-center">
         <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-3" />
         <h3 className="text-lg font-semibold text-slate-900">Profile Unavailable</h3>
-        <p className="text-sm text-slate-500 mb-4">{errorMessage || 'Unable to retrieve your profile details.'}</p>
+        <p className="text-sm text-text-secondary mb-4">{errorMessage || 'Unable to retrieve your profile details.'}</p>
         <Button onClick={fetchProfile} variant="outline">
           Try Again
         </Button>
@@ -229,8 +235,8 @@ export const CustomerProfile: React.FC = () => {
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-border shadow-sm">
         <div className="flex items-center space-x-4">
-          <div className="w-14 h-14 rounded-full bg-emerald-100 border-2 border-emerald-500 flex items-center justify-center text-emerald-800 font-bold text-xl">
-            {profile.fullName.charAt(0).toUpperCase()}
+          <div className="w-14 h-14 rounded-full bg-emerald-100 border-2 border-success flex items-center justify-center text-emerald-800 font-bold text-xl">
+            {(profile.fullName || 'User').charAt(0).toUpperCase()}
           </div>
           <div>
             <div className="flex items-center space-x-2">
@@ -239,7 +245,7 @@ export const CustomerProfile: React.FC = () => {
                 {profile.status}
               </Badge>
             </div>
-            <p className="text-xs text-slate-500 flex items-center mt-1">
+            <p className="text-xs text-text-secondary flex items-center mt-1">
               <Calendar className="w-3.5 h-3.5 mr-1" />
               Member since {new Date(profile.createdAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
             </p>
@@ -328,10 +334,10 @@ export const CustomerProfile: React.FC = () => {
               <div className="space-y-1.5">
                 <Label htmlFor="mobile" className="flex items-center justify-between">
                   <span>Mobile Number</span>
-                  <span className="text-[11px] text-slate-400 font-normal">Primary Login ID (Immutable)</span>
+                  <span className="text-[11px] text-text-secondary font-normal">Primary Login ID (Immutable)</span>
                 </Label>
                 <div className="flex items-center space-x-2 bg-slate-100 p-2.5 rounded-md border border-slate-200 text-slate-600">
-                  <Phone className="w-4 h-4 text-slate-400" />
+                  <Phone className="w-4 h-4 text-text-secondary" />
                   <span className="text-sm font-mono font-medium">+91 {profile.mobile}</span>
                   <Badge variant="outline" className="ml-auto text-[10px] bg-slate-200 border-none">
                     Verified
@@ -348,7 +354,7 @@ export const CustomerProfile: React.FC = () => {
                   </div>
                 ) : (
                   <div className="flex items-center space-x-2 bg-slate-50 p-2.5 rounded-md border border-slate-200">
-                    <Mail className="w-4 h-4 text-slate-400" />
+                    <Mail className="w-4 h-4 text-text-secondary" />
                     <span className="text-sm font-medium text-slate-800">{profile.email}</span>
                   </div>
                 )}
@@ -489,7 +495,7 @@ export const CustomerProfile: React.FC = () => {
                       {...register('aadhaar')}
                       placeholder="Enter 12 digits only if updating"
                     />
-                    <p className="text-[11px] text-slate-500 mt-1">
+                    <p className="text-[11px] text-text-secondary mt-1">
                       Current: <span className="font-mono">{profile.aadhaarMasked}</span>. Leave blank to keep existing.
                     </p>
                     {errors.aadhaar && <p className="text-xs text-destructive mt-1">{errors.aadhaar.message}</p>}
@@ -510,7 +516,7 @@ export const CustomerProfile: React.FC = () => {
             {/* KYC Status indicator */}
             <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
+                <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider block">
                   Overall KYC Status
                 </span>
                 <span className="text-sm font-medium text-slate-800">

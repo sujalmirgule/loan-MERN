@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { settingsService } from '../services/settingsService';
+import { pdfService } from '../services/pdfService';
 import {
   updateBrandingSchema,
+  updateDocumentBrandingSchema,
   updateEmailSettingsSchema,
   testEmailSchema,
   updateWhatsAppSettingsSchema,
@@ -34,7 +36,124 @@ export class SettingsController {
       if (!req.user) throw new AppError(401, 'Unauthorized');
       const input = updateBrandingSchema.parse(req.body);
       const data = await settingsService.updateBrandingSettings(input, req.user, req.ip);
-      res.status(200).json({ success: true, message: 'Branding settings updated successfully', data });
+      res.status(200).json({ success: true, message: 'Website branding saved successfully', data });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async getDocumentBrandingSettings(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await settingsService.getDocumentBrandingSettings();
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async updateDocumentBrandingSettings(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const input = updateDocumentBrandingSchema.parse(req.body);
+      const data = await settingsService.updateDocumentBrandingSettings(input, req.user, req.ip);
+      res.status(200).json({ success: true, message: 'Document branding saved successfully', data });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async previewApprovalLetter(req: Request, res: Response, next: NextFunction) {
+    try {
+      const branding = await settingsService.getBrandingSettings();
+      const pdfBuffer = await pdfService.generateApprovalLetterPdf({
+        customerName: 'Ajay Kumar',
+        customerPhone: '+91 8274843108',
+        customerEmail: 'ajay.kumar@example.com',
+        customerAddress: 'Office 218, Gokhale Plaza, Chinchwad, Pune, Maharashtra 411033',
+        applicationNumber: 'LN20260906142729',
+        loanAccountNumber: 'LN20260906142729',
+        approvalNumber: 'LN20260906142729',
+        loanType: 'Business Growth Loan',
+        approvedAmount: 100000,
+        interestRate: 2.0,
+        tenureMonths: 12,
+        monthlyEmi: 8500,
+        processingFee: 7899,
+        approvalDate: new Date(),
+        panMasked: 'BANPN9796M',
+        aadhaarMasked: 'XXXX-XXXX-3108',
+        accountHolderName: 'Ajay Kumar',
+        accountNumberMasked: 'XXXXXX6776',
+        bankIfsc: 'SBIN0004235',
+        bankName: 'State Bank of India',
+        kycVerificationId: 'MUDFNC/437/907/687',
+        companyName: branding.companyName,
+        companyLegalName: branding.companyLegalName,
+        companyEmail: branding.email,
+        companyPhone: branding.phone,
+        companyAddress: branding.address,
+        companyWebsite: branding.website,
+        authorizedSignatoryName: branding.authorizedSignatoryName,
+        authorizedSignatoryDesignation: branding.authorizedSignatoryDesignation,
+        logoUrl: branding.logoUrl,
+        secondaryLogoUrl: branding.secondaryLogoUrl,
+        approvalLetterHeaderUrl: branding.approvalLetterHeaderUrl,
+        watermarkLogoUrl: branding.watermarkLogoUrl,
+        documentWatermarkEnabled: branding.documentWatermarkEnabled,
+        watermarkOpacity: branding.watermarkOpacity,
+        watermarkSize: branding.watermarkSize,
+        watermarkPosition: branding.watermarkPosition,
+        verificationUrl: `https://loanapprove.com/verify/document/LN20260906142729`,
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline; filename="Preview_Approval_Letter.pdf"');
+      res.status(200).send(pdfBuffer);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async previewInvoice(req: Request, res: Response, next: NextFunction) {
+    try {
+      const branding = await settingsService.getBrandingSettings();
+      const pdfBuffer = await pdfService.generateInvoicePdf({
+        invoiceNumber: 'INV-2026-PREVIEW',
+        invoiceDate: new Date(),
+        customerName: 'Ajay Kumar',
+        customerMobile: '+91 8274843108',
+        customerEmail: 'ajay.kumar@example.com',
+        customerAddress: 'Office 218, Gokhale Plaza, Chinchwad, Pune, Maharashtra 411033',
+        applicationNumber: 'LN20260906142729',
+        loanAccountNumber: 'LN20260906142729',
+        chargeType: 'Processing & Verification Fee',
+        chargeDescription: 'Standard Loan File Clearance and Document Verification Fee',
+        amount: 7899,
+        taxAmount: Math.round(7899 * 0.18),
+        totalAmount: Math.round(7899 * 1.18),
+        paymentDate: new Date(),
+        paymentStatus: 'PAID',
+        transactionRef: 'TXN-UTR-987654321012',
+        companyName: branding.companyName,
+        companyLegalName: branding.companyLegalName,
+        companyAddress: branding.address,
+        companyEmail: branding.email,
+        companyPhone: branding.phone,
+        companyWebsite: branding.website,
+        authorizedSignatoryName: branding.authorizedSignatoryName,
+        authorizedSignatoryDesignation: branding.authorizedSignatoryDesignation,
+        logoUrl: branding.logoUrl,
+        watermarkLogoUrl: branding.watermarkLogoUrl,
+        invoiceWatermarkEnabled: branding.invoiceWatermarkEnabled,
+        watermarkOpacity: branding.watermarkOpacity,
+        watermarkSize: branding.watermarkSize,
+        watermarkPosition: branding.watermarkPosition,
+        generatedDate: new Date(),
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline; filename="Preview_Invoice.pdf"');
+      res.status(200).send(pdfBuffer);
     } catch (err) {
       next(err);
     }
@@ -124,3 +243,4 @@ export class SettingsController {
 }
 
 export const settingsController = new SettingsController();
+

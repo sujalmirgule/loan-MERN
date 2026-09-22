@@ -132,16 +132,16 @@ describe('KYC & Document Management Suite', () => {
       expect(cust?.kycStatus).toBe('UNDER_REVIEW');
     });
 
-    it('should successfully upload a valid JPG document', async () => {
+    it('should successfully upload a valid JPG document (Aadhaar Back)', async () => {
       const imgBuffer = Buffer.from('mock jpg data');
       const res = await request(app)
         .post('/api/customer/documents')
         .set('Authorization', `Bearer ${customerAToken}`)
-        .field('documentType', 'PAN')
-        .attach('file', imgBuffer, 'pan_card.jpg');
+        .field('documentType', 'AADHAAR_BACK')
+        .attach('file', imgBuffer, 'aadhaar_back.jpg');
 
       expect(res.status).toBe(201);
-      expect(res.body.data.document.documentType).toBe('PAN');
+      expect(res.body.data.document.documentType).toBe('AADHAAR_BACK');
       expect(res.body.data.document.version).toBe(1);
     });
   });
@@ -338,7 +338,7 @@ describe('KYC & Document Management Suite', () => {
       expect(res.body.data.request.title).toBe('Latest 3 Months Bank Statement');
       expect(res.body.data.request.status).toBe('PENDING');
 
-      // Customer document list should now include this pending request
+        // Customer document list should now include this pending request
       const custDocs = await request(app)
         .get('/api/customer/documents')
         .set('Authorization', `Bearer ${customerAToken}`);
@@ -346,5 +346,47 @@ describe('KYC & Document Management Suite', () => {
       expect(custDocs.body.data.pendingRequests.length).toBe(1);
       expect(custDocs.body.data.pendingRequests[0].title).toBe('Latest 3 Months Bank Statement');
     });
+
+    it('should submit customer KYC when Aadhaar front and back are present', async () => {
+      const res = await request(app)
+        .post('/api/customer/kyc/submit')
+        .set('Authorization', `Bearer ${customerAToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.kycStatus).toBe('UNDER_REVIEW');
+    });
+
+    it('should reject KYC submission when customer is missing required Aadhaar documents', async () => {
+      // Customer B has no documents uploaded
+      const res = await request(app)
+        .post('/api/customer/kyc/submit')
+        .set('Authorization', `Bearer ${customerBToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/Aadhaar Front and Aadhaar Back/i);
+    });
+
+    it('should exclude loan documents (PAN, etc.) from Admin KYC details view', async () => {
+      // Upload a PAN card (Loan Document) for Customer A
+      await request(app)
+        .post('/api/customer/documents')
+        .set('Authorization', `Bearer ${customerAToken}`)
+        .field('documentType', 'PAN')
+        .attach('file', Buffer.from('pan bytes'), 'pan.jpg');
+
+      // Admin requests KYC details for Customer A
+      const res = await request(app)
+        .get(`/api/admin/kyc/${customerAId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      // Admin KYC details must ONLY show Aadhaar documents (front and back), NOT PAN
+      const docTypes = res.body.data.documents.map((d: { documentType: string }) => d.documentType);
+      expect(docTypes).toContain('AADHAAR_FRONT');
+      expect(docTypes).toContain('AADHAAR_BACK');
+      expect(docTypes).not.toContain('PAN');
+    });
   });
 });
+

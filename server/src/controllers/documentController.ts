@@ -157,4 +157,26 @@ export const documentController = {
       next(err);
     }
   },
+
+  /**
+   * POST /api/customer/kyc/submit
+   */
+  async submitKyc(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user || req.user.role !== 'CUSTOMER') {
+        throw new AppError(401, 'Unauthorized');
+      }
+
+      const ipAddress = req.ip || req.socket.remoteAddress;
+      const result = await documentService.submitCustomerKyc(req.user.id, ipAddress);
+
+      res.status(200).json({
+        success: true,
+        message: 'KYC documents submitted successfully for verification',
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
 };

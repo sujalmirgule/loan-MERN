@@ -30,8 +30,9 @@ export const AdminNotificationsPage: React.FC = () => {
     setLoading(true);
     try {
       const res = await api.get(API_ENDPOINTS.NOTIFICATIONS.ADMIN_LIST);
-      setNotifications(res.data?.data || []);
-      setUnreadCount(res.data?.unreadCount || 0);
+      const list = Array.isArray(res?.data) ? res.data : (res?.data?.data || res?.data || []);
+      setNotifications(list);
+      setUnreadCount(res?.unreadCount ?? res?.data?.unreadCount ?? 0);
     } catch (err) {
       console.error('Failed to load admin notifications:', err);
     } finally {
@@ -108,7 +109,7 @@ export const AdminNotificationsPage: React.FC = () => {
         </div>
       ) : notifications.length === 0 ? (
         <div className="bg-white p-12 rounded-xl border border-gray-200 text-center text-gray-500">
-          <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-400 mb-3" />
+          <CheckCircle2 className="w-12 h-12 mx-auto text-success mb-3" />
           <p className="font-medium text-gray-800">All caught up!</p>
           <p className="text-sm text-gray-400 mt-1">No outstanding administrative notifications or warnings.</p>
         </div>

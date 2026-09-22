@@ -6,10 +6,25 @@ export const DOCUMENT_TYPES = [
   'PAN',
   'INCOME_PROOF',
   'BANK_STATEMENT',
+  'SALARY_SLIP',
+  'ADDRESS_PROOF',
   'OTHER',
 ] as const;
 
 export type DocumentType = typeof DOCUMENT_TYPES[number];
+
+export const KYC_DOCUMENT_TYPES = ['AADHAAR_FRONT', 'AADHAAR_BACK'] as const;
+export type KycDocumentType = typeof KYC_DOCUMENT_TYPES[number];
+
+export const LOAN_DOCUMENT_TYPES = [
+  'PAN',
+  'INCOME_PROOF',
+  'BANK_STATEMENT',
+  'SALARY_SLIP',
+  'ADDRESS_PROOF',
+  'OTHER',
+] as const;
+export type LoanDocumentType = typeof LOAN_DOCUMENT_TYPES[number];
 
 export const uploadDocumentSchema = z.object({
   documentType: z.enum(DOCUMENT_TYPES, {
@@ -56,20 +71,20 @@ export const requestAdditionalDocumentSchema = z.object({
 
 export const kycDecisionSchema = z
   .object({
-    status: z.enum(['APPROVED', 'REJECTED', 'UNDER_REVIEW', 'REUPLOAD_REQUIRED'], {
+    status: z.enum(['APPROVED', 'VERIFIED', 'REJECTED', 'UNDER_REVIEW', 'REUPLOAD_REQUIRED'], {
       required_error: 'KYC status is required',
     }),
     reason: z.string().optional(),
   })
   .refine(
     (data) => {
-      if (data.status === 'REJECTED' && (!data.reason || data.reason.trim().length === 0)) {
+      if ((data.status === 'REJECTED' || data.status === 'REUPLOAD_REQUIRED') && (!data.reason || data.reason.trim().length === 0)) {
         return false;
       }
       return true;
     },
     {
-      message: 'A reason is required when marking KYC as REJECTED.',
+      message: 'A reason is required when marking KYC as REJECTED or requesting correction.',
       path: ['reason'],
     }
   );

@@ -16,6 +16,7 @@ import {
   ChevronDown,
   RefreshCw,
 } from 'lucide-react';
+import { useBrandTitle } from '@/hooks/useBrandTitle';
 
 interface SupportTicketItem {
   id: string;
@@ -47,6 +48,7 @@ const FAQS = [
 ];
 
 export const CustomerSupportPage: React.FC = () => {
+  useBrandTitle('Customer Support');
   const queryClient = useQueryClient();
 
   const [subject, setSubject] = useState('');
@@ -97,11 +99,11 @@ export const CustomerSupportPage: React.FC = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'RESOLVED':
-        return <Badge className="bg-emerald-600 text-white">Resolved ✓</Badge>;
+        return <Badge className="bg-success text-background text-text-primary">Resolved ✓</Badge>;
       case 'IN_PROGRESS':
-        return <Badge className="bg-blue-600 text-white">In Progress</Badge>;
+        return <Badge className="bg-primary text-background text-text-primary">In Progress</Badge>;
       default:
-        return <Badge className="bg-amber-600 text-white">Open</Badge>;
+        return <Badge className="bg-warning text-background text-text-primary">Open</Badge>;
     }
   };
 
@@ -137,7 +139,7 @@ export const CustomerSupportPage: React.FC = () => {
                       className="w-full text-left p-3 text-xs font-semibold text-slate-800 bg-slate-50/50 hover:bg-slate-100 flex items-center justify-between"
                     >
                       <span>{faq.q}</span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`w-3.5 h-3.5 text-text-secondary transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                     </button>
                     {isOpen && (
                       <div className="p-3 text-xs text-slate-600 bg-white border-t border-slate-100 leading-relaxed">
@@ -259,7 +261,7 @@ export const CustomerSupportPage: React.FC = () => {
                     <h3 className="text-xs sm:text-sm font-semibold text-slate-900">{t.subject}</h3>
                     <div className="flex items-center space-x-2">
                       {getStatusBadge(t.status)}
-                      <span className="text-[10px] text-slate-400 flex items-center">
+                      <span className="text-[10px] text-text-secondary flex items-center">
                         <Clock className="w-3 h-3 mr-1" />
                         {new Date(t.createdAt).toLocaleDateString('en-IN')}
                       </span>
@@ -284,7 +286,7 @@ export const CustomerSupportPage: React.FC = () => {
             ))}
           </div>
         ) : (
-          <Card className="border-slate-200 p-6 text-center text-xs text-slate-400">
+          <Card className="border-slate-200 p-6 text-center text-xs text-text-secondary">
             No previous support tickets filed.
           </Card>
         )}

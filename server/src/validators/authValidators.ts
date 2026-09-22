@@ -44,6 +44,7 @@ export const customerRegisterSchema = z
       .number({ required_error: 'Monthly income is required', invalid_type_error: 'Monthly income must be a number' })
       .positive('Monthly income must be greater than zero')
       .max(100000000, 'Monthly income exceeds allowable limit'),
+    pincode: z.string().trim().optional(),
   })
   .strict();
 

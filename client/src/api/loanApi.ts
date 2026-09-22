@@ -52,6 +52,7 @@ export interface AdminLoanApplicationListItem {
   city: string;
   kycStatus: string;
   requestedAmount: number;
+  loanType?: string;
   proposedAmount?: number | null;
   approvedAmount?: number | null;
   acceptedAmount?: number | null;
@@ -124,6 +125,7 @@ export interface AdminFilterParams {
   status?: string;
   state?: string;
   city?: string;
+  loanType?: string;
   dateFilter?: string;
   startDate?: string;
   endDate?: string;
@@ -264,11 +266,25 @@ export const loanApi = {
     );
   },
 
-  async approveApplication(id: string): Promise<ApiResponse<CustomerLoanApplication>> {
+  async approveApplication(
+    id: string,
+    data?: {
+      approvedAmount?: number;
+      interestRate?: number;
+      tenureMonths?: number;
+      finalEmi?: number;
+      processingFeeAmount?: number;
+      insuranceAmount?: number;
+      totalPayable?: number;
+      disbursementDate?: string;
+      remarks?: string;
+    }
+  ): Promise<ApiResponse<CustomerLoanApplication>> {
     return apiClient<ApiResponse<CustomerLoanApplication>>(
       API_ENDPOINTS.ADMIN_LOANS.APPROVE(id),
       {
         method: 'POST',
+        body: data ? JSON.stringify(data) : undefined,
         tokenType: 'admin',
       }
     );

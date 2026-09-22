@@ -19,13 +19,18 @@ global.fetch = vi.fn().mockImplementation(() =>
 );
 
 describe('Client Application Root', () => {
-  it('renders landing page with Loan Approve title and portal buttons', async () => {
+  it('renders landing page with h1 heading and Apply Now / Login navigation links', async () => {
     await act(async () => {
       render(<App />);
     });
 
-    expect(screen.getByRole('heading', { name: /LOAN APPROVE/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^Customer Portal$/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^Admin Console$/i })).toBeInTheDocument();
+    // The landing page renders an h1 heading
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+
+    // Login and Apply Now are Link elements (role=link) in the new landing page header
+    expect(screen.getAllByRole('link', { name: /Apply Now/i }).length).toBeGreaterThan(0);
+    // Login is present in the mobile drawer or hidden desktop nav as a link
+    expect(screen.getAllByRole('link', { name: /Login/i }).length).toBeGreaterThan(0);
   });
 });
+

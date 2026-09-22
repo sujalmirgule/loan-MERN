@@ -6,6 +6,7 @@ import {
   adminLoginSchema,
 } from '../validators/authValidators';
 import { auditService } from '../services/auditService';
+import { resolveDomainId } from '../utils/domainResolver';
 
 export const authController = {
   /**
@@ -16,7 +17,10 @@ export const authController = {
       const validatedData = customerRegisterSchema.parse(req.body);
       const ipAddress = req.ip || req.socket.remoteAddress;
 
-      const result = await authService.registerCustomer(validatedData, ipAddress);
+      // Resolve domain from the server side — never trust a client-supplied domainId
+      const domainId = await resolveDomainId(req);
+
+      const result = await authService.registerCustomer(validatedData, ipAddress, domainId);
 
       res.status(201).json({
         success: true,

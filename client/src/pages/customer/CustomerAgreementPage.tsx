@@ -12,9 +12,15 @@ import {
   AlertCircle,
   ArrowRight,
   Printer,
+  Download,
   ShieldCheck,
   RefreshCw,
+  QrCode as QrIcon,
+  ExternalLink,
 } from 'lucide-react';
+
+import { useBranding } from '@/contexts/BrandingContext';
+import { useBrandTitle } from '@/hooks/useBrandTitle';
 
 interface AgreementData {
   agreementId: string;
@@ -26,14 +32,17 @@ interface AgreementData {
   emi: number;
   interestRate: number;
   agreementVersion: string;
-  contentHtml: string;
+  contentHtml?: string;
   acceptanceStatus: string;
   acceptedAt?: string;
-  ipAddress?: string;
-  userAgent?: string;
+  accountNumber?: string;
+  purpose?: string;
+  verificationToken?: string;
 }
 
 export const CustomerAgreementPage: React.FC = () => {
+  const { branding } = useBranding();
+  useBrandTitle('Loan Agreement');
   const { loanId, id } = useParams<{ loanId?: string; id?: string }>();
   const effectiveLoanId = loanId || id || 'test-loan-1';
   const queryClient = useQueryClient();
@@ -41,6 +50,7 @@ export const CustomerAgreementPage: React.FC = () => {
   const [agreedCheckbox, setAgreedCheckbox] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery<AgreementData>({
     queryKey: ['loan-agreement', effectiveLoanId],
@@ -72,18 +82,49 @@ export const CustomerAgreementPage: React.FC = () => {
     window.print();
   };
 
+  const handleDownloadPdf = async () => {
+    try {
+      setDownloadingPdf(true);
+      const token = localStorage.getItem('loanapprove_token');
+      const response = await fetch(`/api/customer/loans/${effectiveLoanId}/approval-letter/pdf`, {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate official PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Approval_Letter_${data?.applicationNumber || effectiveLoanId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error downloading PDF';
+      setErrorMessage(msg);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   if (isLoading) {
     return (
-      <div className="space-y-6 animate-pulse max-w-4xl mx-auto">
+      <div className="space-y-6 animate-pulse max-w-4xl mx-auto py-8">
         <div className="h-8 bg-slate-200 rounded w-1/3" />
-        <div className="h-96 bg-slate-200 rounded-xl" />
+        <div className="h-96 bg-slate-200 rounded-2xl" />
       </div>
     );
   }
 
   if (isError || !data) {
     return (
-      <Card className="max-w-2xl mx-auto border-red-200 bg-red-50 p-6 text-center">
+      <Card className="max-w-2xl mx-auto border-red-200 bg-red-50 p-6 text-center my-8">
         <AlertCircle className="w-8 h-8 text-red-600 mx-auto mb-2" />
         <h3 className="text-base font-semibold text-red-900">Failed to load loan agreement</h3>
         <p className="text-xs text-red-700 mt-1 mb-4">Could not retrieve the agreement document for this loan.</p>
@@ -96,9 +137,11 @@ export const CustomerAgreementPage: React.FC = () => {
   }
 
   const isAccepted = data.acceptanceStatus === 'ACCEPTED';
+  const verificationCode = data.verificationToken || data.agreementId || effectiveLoanId;
+  const verificationUrl = `${window.location.origin}/verify/document/${verificationCode}`;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 py-4 px-2 sm:px-4">
       {/* Header */}
       <div className="pb-2 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -112,13 +155,22 @@ export const CustomerAgreementPage: React.FC = () => {
         </div>
         <div className="flex items-center space-x-2">
           {isAccepted ? (
-            <Badge className="bg-emerald-600 text-white px-3 py-1 text-xs">Agreement Accepted ✓</Badge>
+            <Badge className="bg-success text-background text-text-primary px-3 py-1 text-xs">Agreement Accepted ✓</Badge>
           ) : (
-            <Badge className="bg-amber-600 text-white px-3 py-1 text-xs">Pending Digital Signature</Badge>
+            <Badge className="bg-warning text-background text-text-primary px-3 py-1 text-xs">Pending Digital Signature</Badge>
           )}
           <Button variant="outline" size="sm" onClick={handlePrint} className="text-xs h-8">
             <Printer className="w-3.5 h-3.5 mr-1.5" />
             Print / Save PDF
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            className="text-xs h-8 bg-primary text-primary-foreground font-semibold"
+          >
+            <Download className="w-3.5 h-3.5 mr-1.5" />
+            Download PDF
           </Button>
         </div>
       </div>
@@ -128,7 +180,7 @@ export const CustomerAgreementPage: React.FC = () => {
         <Card className="border-emerald-300 bg-emerald-50 shadow-sm">
           <CardContent className="p-4 flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-full bg-success text-background text-text-primary flex items-center justify-center shrink-0">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <div className="text-xs">
@@ -148,21 +200,89 @@ export const CustomerAgreementPage: React.FC = () => {
         </Card>
       )}
 
+      {/* Screen 10 Financial Summary Table */}
+      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+        <div className="bg-surface text-text-primary text-xs font-bold uppercase tracking-wider px-4 py-2.5">
+          Approved Loan Parameters
+        </div>
+        <div className="divide-y divide-slate-200 text-xs">
+          <div className="grid grid-cols-2 p-3 bg-slate-50">
+            <span className="text-text-secondary font-medium">Sanctioned Amount</span>
+            <span className="text-slate-900 font-bold text-sm text-right">
+              ₹{Number(data.sanctionedAmount).toLocaleString('en-IN')}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 p-3">
+            <span className="text-text-secondary font-medium">Interest Rate (p.a.)</span>
+            <span className="text-slate-900 font-semibold text-right">{data.interestRate}%</span>
+          </div>
+          <div className="grid grid-cols-2 p-3 bg-slate-50">
+            <span className="text-text-secondary font-medium">Loan Tenure</span>
+            <span className="text-slate-900 font-semibold text-right">{data.tenureMonths} Months</span>
+          </div>
+          <div className="grid grid-cols-2 p-3 bg-emerald-50/60">
+            <span className="text-emerald-900 font-bold">Monthly Equated Installment (EMI)</span>
+            <span className="text-emerald-700 font-extrabold text-sm text-right">
+              ₹{Number(data.emi).toLocaleString('en-IN')}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Agreement Terms Paper Box */}
       <Card className="shadow-sm border-slate-200">
         <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/50">
           <div className="flex justify-between items-center text-xs">
-            <span className="font-bold text-slate-700">Legal Agreement v{data.agreementVersion || '1.0'}</span>
-            <span className="font-mono text-slate-500">ID: {(data.agreementId || '').slice(0, 8)}...</span>
+            <span className="font-bold text-slate-700">Legal Agreement {data.agreementVersion || 'v1.0'}</span>
+            <span className="font-mono text-text-secondary">ID: {(data.agreementId || '').slice(0, 8)}...</span>
           </div>
         </CardHeader>
         <CardContent className="p-6">
           <div
             className="prose prose-sm max-w-none text-slate-800"
-            dangerouslySetInnerHTML={{ __html: data.contentHtml || '' }}
+            dangerouslySetInnerHTML={{ __html: data.contentHtml || '<p>This Loan Agreement is made between Lender and Borrower under applicable fintech lending guidelines.</p>' }}
           />
         </CardContent>
       </Card>
+
+      {/* Screen 10 Verification & Authorized Signature Block */}
+      <div className="p-4 bg-white border border-slate-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+        <div className="flex items-center space-x-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+          <div className="w-14 h-14 bg-white border border-slate-300 rounded p-1 shrink-0 flex items-center justify-center">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(verificationUrl)}`}
+              alt="Verification QR"
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <div className="text-[11px] text-slate-600">
+            <p className="font-bold text-slate-900 flex items-center gap-1">
+              <QrIcon className="w-3 h-3 text-primary" />
+              Document Authenticity QR
+            </p>
+            <p className="text-text-secondary text-[10px] mt-0.5">
+              Ref: <span className="font-mono text-slate-700">{verificationCode}</span>
+            </p>
+            <Link
+              to={`/verify/document/${verificationCode}`}
+              target="_blank"
+              className="text-primary hover:underline font-semibold inline-flex items-center gap-0.5 mt-0.5 text-[10px]"
+            >
+              Verify Online <ExternalLink className="w-2.5 h-2.5" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="text-left sm:text-right space-y-0.5">
+          <div className="inline-block border-b border-slate-400 pb-0.5 px-3">
+            <span className="font-serif italic text-sm text-slate-800 font-bold">
+              Authorized Signatory
+            </span>
+          </div>
+          <p className="text-xs font-bold text-slate-900">{branding.companyName || branding.appName} Operations</p>
+          <p className="text-[10px] text-text-secondary">Digital Seal & Verification Authority</p>
+        </div>
+      </div>
 
       {/* Acceptance Section */}
       {!isAccepted && (
@@ -206,7 +326,7 @@ export const CustomerAgreementPage: React.FC = () => {
                 size="sm"
                 disabled={!agreedCheckbox || acceptMutation.isPending}
                 onClick={() => acceptMutation.mutate()}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs h-9 px-4"
+                className="bg-emerald-700 hover:bg-emerald-800 text-text-primary text-xs h-9 px-4"
               >
                 {acceptMutation.isPending ? (
                   <>
@@ -227,3 +347,5 @@ export const CustomerAgreementPage: React.FC = () => {
     </div>
   );
 };
+
+export default CustomerAgreementPage;

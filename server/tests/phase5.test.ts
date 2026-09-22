@@ -3,6 +3,7 @@ import request from 'supertest';
 import { app } from '../src/app';
 import { prisma } from '../src/services/db';
 import bcrypt from 'bcryptjs';
+import { ALL_PERMISSION_KEYS } from '../src/constants/permissions';
 
 describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
   const customerMobile = '9811111111';
@@ -20,14 +21,18 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
 
   beforeAll(async () => {
     // Clean up previous test artifacts
+    await prisma.invoice.deleteMany({});
     await prisma.supportTicket.deleteMany({});
     await prisma.notification.deleteMany({});
     await prisma.disbursement.deleteMany({});
     await prisma.eMISchedule.deleteMany({});
     await prisma.payment.deleteMany({});
+    await prisma.charge.deleteMany({});
     await prisma.loanAgreement.deleteMany({});
     await prisma.loanDocument.deleteMany({});
     await prisma.documentRequest.deleteMany({});
+    await prisma.whatsAppMessage.deleteMany({});
+    await prisma.emailMessage.deleteMany({});
     await prisma.loanApplication.deleteMany({});
     await prisma.customer.deleteMany({
       where: { mobile: { in: [customerMobile, customerMobile2] } },
@@ -45,6 +50,7 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
         passwordHash,
         fullName: 'Operations VP',
         role: 'ADMIN',
+        permissions: JSON.stringify(ALL_PERMISSION_KEYS),
         isActive: true,
       },
     });
@@ -87,6 +93,16 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
     customerId2 = cust2Res.body.data.user.id;
     expect(customerId2).toBeDefined();
 
+    // Approve KYC for test customers to enable loan application
+    await prisma.customer.update({
+      where: { id: customerId },
+      data: { kycStatus: 'APPROVED' },
+    });
+    await prisma.customer.update({
+      where: { id: customerId2 },
+      data: { kycStatus: 'APPROVED' },
+    });
+
     // 4. Submit Loan for Customer 1
     const loanRes = await request(app)
       .post('/api/customer/loan-applications')
@@ -100,13 +116,18 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
   });
 
   afterAll(async () => {
+    await prisma.invoice.deleteMany({});
     await prisma.supportTicket.deleteMany({});
     await prisma.notification.deleteMany({});
     await prisma.disbursement.deleteMany({});
     await prisma.eMISchedule.deleteMany({});
     await prisma.payment.deleteMany({});
+    await prisma.charge.deleteMany({});
     await prisma.loanAgreement.deleteMany({});
     await prisma.loanDocument.deleteMany({});
+    await prisma.documentRequest.deleteMany({});
+    await prisma.whatsAppMessage.deleteMany({});
+    await prisma.emailMessage.deleteMany({});
     await prisma.loanApplication.deleteMany({});
     await prisma.customer.deleteMany({
       where: { mobile: { in: [customerMobile, customerMobile2] } },
@@ -284,16 +305,25 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
       expect(found.customerName).toBe('Vikram Malhotra');
     });
 
-    it('Admin verifies payment: automatically transitions loan to APPROVED, creates EMI and agreement', async () => {
-      const res = await request(app)
-        .post(`/api/admin/payments/${testPaymentId}/verify`)
-        .set('Authorization', `Bearer ${adminToken}`);
+    it('Admin approves loan application: transitions loan to APPROVED, creates EMI schedule and agreement', async () => {
+      // Ensure KYC verified so underwriting approves
+      await prisma.customer.update({
+        where: { id: customerId },
+        data: { kycStatus: 'VERIFIED' },
+      });
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.updatedPayment.status).toBe('PAID');
-      expect(res.body.data.updatedLoan.status).toBe('APPROVED');
-      expect(res.body.data.updatedLoan.approvedAmount).toBe(250000);
+      const approveRes = await request(app)
+        .post(`/api/admin/loan-applications/${testLoanId}/approve`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          approvedAmount: 250000,
+          tenureMonths: 24,
+          interestRate: 2.0,
+        });
+
+      expect(approveRes.status).toBe(200);
+      expect(approveRes.body.data.status).toBe('APPROVED');
+      expect(approveRes.body.data.approvedAmount).toBe(250000);
 
       // Verify EMI schedule generated
       const emiCount = await prisma.eMISchedule.count({ where: { loanId: testLoanId } });
@@ -306,7 +336,25 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
 
       // Verify Customer Notification created
       const notif = await prisma.notification.findFirst({
-        where: { customerId, eventType: 'LOAN_APPROVED' },
+        where: { customerId, eventType: 'LOAN_STATUS' },
+      });
+      expect(notif).not.toBeNull();
+    }, 15000);
+
+    it('Admin verifies payment: marks Payment as PAID and Charge as PAID without altering loan approval status', async () => {
+      const res = await request(app)
+        .post(`/api/admin/payments/${testPaymentId}/verify`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.updatedPayment.status).toBe('PAID');
+      expect(res.body.data.updatedLoan.paymentStatus).toBe('PAID');
+      expect(res.body.data.updatedLoan.status).toBe('APPROVED'); // Remained approved by explicit admin action
+
+      // Verify Customer Notification created
+      const notif = await prisma.notification.findFirst({
+        where: { customerId, eventType: 'PAYMENT_VERIFIED' },
       });
       expect(notif).not.toBeNull();
     });
@@ -322,11 +370,12 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
   });
 
   // -------------------------------------------------------------
-  // 3. ONE APPROVED LOAN RULE ENFORCEMENT
+  // 3. ONE ACTIVE LOAN RULE ENFORCEMENT
   // -------------------------------------------------------------
   describe('One Approved Loan Rule Enforcement', () => {
-    it('Strictly prevents automatic approval if customer already has an active approved loan', async () => {
-      // Customer 1 submits a SECOND loan application
+    it('Strictly prevents submitting a second loan when one is already active (One-Active-Loan Rule)', async () => {
+      // Customer 1 already has an APPROVED active loan from the previous describe block.
+      // Attempting to create a SECOND loan application must be blocked at submission time.
       const loan2Res = await request(app)
         .post('/api/customer/loan-applications')
         .set('Authorization', `Bearer ${customerToken}`)
@@ -335,26 +384,13 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
           tenureMonths: 12,
           purpose: 'Home renovation',
         });
-      const secondLoanId = loan2Res.body.data.id;
 
-      // Customer submits payment for second loan
-      const submitRes = await request(app)
-        .post(`/api/customer/payments/${secondLoanId}/submit-utr`)
-        .set('Authorization', `Bearer ${customerToken}`)
-        .send({
-          utr: 'UTR_SECOND_LOAN_789',
-          paymentMethod: 'UPI',
-        });
-      const secondPaymentId = submitRes.body.data.id;
-
-      // Admin tries to verify payment for second loan
-      const verifyRes = await request(app)
-        .post(`/api/admin/payments/${secondPaymentId}/verify`)
-        .set('Authorization', `Bearer ${adminToken}`);
-
-      // MUST FAIL due to One Approved Loan Rule!
-      expect(verifyRes.status).toBe(400);
-      expect(verifyRes.body.message).toContain('only one active approved loan per customer');
+      // One-Active-Loan-Per-Customer rule enforced at creation — returns 409 Conflict
+      expect(loan2Res.status).toBe(409);
+      expect(loan2Res.body.success).toBe(false);
+      expect(loan2Res.body.code).toBe('ACTIVE_APPLICATION_EXISTS');
+      // No second loan ID created
+      expect(loan2Res.body.data?.id).toBeUndefined();
     });
   });
 
@@ -486,12 +522,12 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
 
     it('Admin queries audit logs with filters', async () => {
       const res = await request(app)
-        .get('/api/admin/audit-logs?action=LOAN_AUTO_APPROVED')
+        .get('/api/admin/audit-logs?action=PAYMENT_VERIFIED')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBeGreaterThanOrEqual(1);
-      expect(res.body.data[0].action).toBe('LOAN_AUTO_APPROVED');
+      expect(res.body.data[0].action).toBe('PAYMENT_VERIFIED');
     });
   });
 

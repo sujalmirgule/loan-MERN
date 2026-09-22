@@ -1,369 +1,1082 @@
-import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useEffect } from 'react';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import {
-  CreditCard,
-  Copy,
-  Check,
   CheckCircle2,
   AlertCircle,
+  Copy,
+  Check,
+  ShieldCheck,
+  QrCode,
+  Landmark,
+  ExternalLink,
+  Lock,
+  Download,
+  Eye,
+  Loader2,
   Clock,
   ArrowRight,
-  ShieldCheck,
-  RefreshCw,
-  FileSignature,
+  Sparkles,
+  Receipt,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 
-interface PaymentRequirementData {
-  loanId: string;
-  applicationNumber: string;
-  loanStatus: string;
-  paymentStatus: string;
-  chargeAmount: number;
-  chargeType: string;
-  upiId: string;
-  accountNumber: string;
-  ifscCode: string;
-  accountHolderName: string;
-  instructions: string;
-  paymentRecord: {
-    id: string;
-    amount: number;
-    transactionRef: string;
-    paymentMethod: string;
-    status: string;
-    rejectionReason?: string;
-    submittedAt: string;
-    verifiedAt?: string;
-    verifiedBy?: string;
-  } | null;
+import { useBranding } from '@/contexts/BrandingContext';
+import { useBrandTitle } from '@/hooks/useBrandTitle';
+
+interface PaymentOptionsData {
+  feeAmount: number;
+  feeType: string;
+  paymentMethods?: {
+    upi: boolean;
+    bankTransfer: boolean;
+    merchantVpa: boolean;
+  };
+  upi: {
+    enabled: boolean;
+    primaryUpiId: string;
+    merchantName?: string;
+    apps: Array<{ name: string; id: string }>;
+    qrCodeUrl?: string;
+    merchantVpa?: {
+      enabled: boolean;
+      vpa: string;
+    };
+  };
+  bank: {
+    enabled: boolean;
+    accountHolder: string;
+    accountNumber: string;
+    bankName: string;
+    ifsc: string;
+    branch: string;
+  };
+  paymentLinks: Array<{ id: string; title: string; url: string; description?: string }>;
 }
 
 export const CustomerPaymentPage: React.FC = () => {
-  const { loanId } = useParams<{ loanId: string }>();
+  const { branding } = useBranding();
+  useBrandTitle('Charges & Payments');
+  const { loanId } = useParams<{ loanId?: string }>();
   const queryClient = useQueryClient();
 
-  const [utr, setUtr] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('UPI');
-  const [notes, setNotes] = useState('');
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
-  const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<'UPI' | 'QR' | 'MERCHANT_VPA' | 'BANK' | 'LINK'>('UPI');
+  const [utrNumber, setUtrNumber] = useState('');
+  const [copied, setCopied] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showUtrModal, setShowUtrModal] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const { data, isLoading, isError, refetch } = useQuery<PaymentRequirementData>({
-    queryKey: ['customer-payment', loanId],
+  const [searchParams] = useSearchParams();
+  const chargeIdParam = searchParams.get('chargeId');
+  const [selectedChargeId, setSelectedChargeId] = useState<string | null>(chargeIdParam);
+
+  // Per-charge download states
+  const [downloadingChargeId, setDownloadingChargeId] = useState<string | null>(null);
+  const [downloadErrorChargeId, setDownloadErrorChargeId] = useState<string | null>(null);
+
+  // Invoice Preview State
+  const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
+  const [invoicePreviewUrl, setInvoicePreviewUrl] = useState<string | null>(null);
+  const [invoicePreviewTitle, setInvoicePreviewTitle] = useState('');
+  const [invoicePreviewLoading, setInvoicePreviewLoading] = useState(false);
+
+  // Fetch active payment options
+  const { data: options } = useQuery<PaymentOptionsData>({
+    queryKey: ['activePaymentOptions'],
     queryFn: async () => {
-      if (!loanId) throw new Error('Loan ID is required');
+      const res = await apiClient.get(API_ENDPOINTS.ACTIVE_PAYMENT_OPTIONS);
+      return res.data?.data || res.data;
+    },
+    refetchInterval: 1500,
+  });
+
+  // Calculate active payment rails
+  const upiActive = Boolean(options?.paymentMethods?.upi ?? options?.upi?.enabled ?? true);
+  const bankActive = Boolean(options?.paymentMethods?.bankTransfer ?? options?.bank?.enabled ?? true);
+  const merchantVpaActive = Boolean(options?.paymentMethods?.merchantVpa ?? options?.upi?.merchantVpa?.enabled ?? false);
+  const linksActive = Boolean(options?.paymentLinks && options.paymentLinks.length > 0);
+  const hasAnyPaymentMethod = upiActive || bankActive || merchantVpaActive || linksActive;
+
+  // Auto-select first available payment method when options change
+  useEffect(() => {
+    if (options) {
+      const isUpi = options.paymentMethods?.upi ?? options.upi?.enabled ?? true;
+      const isVpa = options.paymentMethods?.merchantVpa ?? options.upi?.merchantVpa?.enabled ?? false;
+      const isBank = options.paymentMethods?.bankTransfer ?? options.bank?.enabled ?? true;
+      const isLink = Boolean(options.paymentLinks && options.paymentLinks.length > 0);
+
+      if ((selectedMethod === 'UPI' || selectedMethod === 'QR') && !isUpi) {
+        if (isVpa) setSelectedMethod('MERCHANT_VPA');
+        else if (isBank) setSelectedMethod('BANK');
+        else if (isLink) setSelectedMethod('LINK');
+      } else if (selectedMethod === 'MERCHANT_VPA' && !isVpa) {
+        if (isUpi) setSelectedMethod('UPI');
+        else if (isBank) setSelectedMethod('BANK');
+        else if (isLink) setSelectedMethod('LINK');
+      } else if (selectedMethod === 'BANK' && !isBank) {
+        if (isUpi) setSelectedMethod('UPI');
+        else if (isVpa) setSelectedMethod('MERCHANT_VPA');
+        else if (isLink) setSelectedMethod('LINK');
+      } else if (selectedMethod === 'LINK' && !isLink) {
+        if (isUpi) setSelectedMethod('UPI');
+        else if (isVpa) setSelectedMethod('MERCHANT_VPA');
+        else if (isBank) setSelectedMethod('BANK');
+      }
+    }
+  }, [options, selectedMethod]);
+
+  // Fetch customer profile to check KYC status
+  const { data: customerProfile } = useQuery({
+    queryKey: ['customerProfileForPayments'],
+    queryFn: async () => {
+      try {
+        const res = await apiClient.get(API_ENDPOINTS.CUSTOMERS.PROFILE);
+        return res.data?.data?.profile || res.data?.profile || res.data;
+      } catch {
+        return null;
+      }
+    },
+    refetchInterval: 1500,
+  });
+
+  const kycStatus = customerProfile?.kycStatus;
+  const isKycApproved = kycStatus === 'APPROVED' || kycStatus === 'VERIFIED';
+  const isPreKyc = !isKycApproved;
+
+  // Fetch loan payment status if loanId is present
+  const { data: paymentReq, refetch: refetchPayment } = useQuery({
+    queryKey: ['paymentReq', loanId],
+    queryFn: async () => {
+      if (!loanId || loanId === 'undefined') return null;
       const res = await apiClient.get(API_ENDPOINTS.PAYMENTS.CUSTOMER_REQUIREMENT(loanId));
-      return res.data;
+      return res.data?.data || res.data;
     },
-    enabled: Boolean(loanId),
-    refetchInterval: 10000,
+    refetchInterval: 1500,
   });
 
-  const submitMutation = useMutation({
-    mutationFn: async () => {
-      if (!loanId) throw new Error('Missing Loan ID');
-      return apiClient.post(API_ENDPOINTS.PAYMENTS.SUBMIT_UTR(loanId), {
-        utr: utr.trim().toUpperCase(),
-        paymentMethod,
-        notes: notes.trim() || undefined,
-      });
+  // Fetch specific customer charges for this application/customer
+  const { data: customerCharges = [], refetch: refetchCharges } = useQuery({
+    queryKey: ['customerChargesList', loanId],
+    queryFn: async () => {
+      const res = await apiClient.get(
+        loanId && loanId !== 'undefined'
+          ? API_ENDPOINTS.CUSTOMER_CHARGES.BY_APPLICATION(loanId)
+          : API_ENDPOINTS.CUSTOMER_CHARGES.LIST
+      );
+      return res.data?.data || res.data || [];
     },
-    onSuccess: () => {
-      setFeedbackSuccess('Payment reference submitted successfully. Our operations team is verifying your transaction.');
-      setFeedbackError(null);
-      queryClient.invalidateQueries({ queryKey: ['customer-payment', loanId] });
-      queryClient.invalidateQueries({ queryKey: ['customer-dashboard'] });
-    },
-    onError: (err: Error) => {
-      setFeedbackError(err.message || 'Failed to submit payment reference.');
-      setFeedbackSuccess(null);
-    },
+    refetchInterval: 1500,
   });
 
-  const handleCopy = (text: string, field: string) => {
+  useEffect(() => {
+    if (chargeIdParam) {
+      setSelectedChargeId(chargeIdParam);
+    }
+  }, [chargeIdParam]);
+
+  const pendingCharges = customerCharges.filter((c: any) => c.status === 'PENDING' || c.status === 'UNDER_VERIFICATION');
+  const paidCharges = customerCharges.filter((c: any) => c.status === 'PAID');
+
+  // If no charge is currently selected, pick the first pending charge
+  useEffect(() => {
+    if (!selectedChargeId && pendingCharges.length > 0) {
+      const firstPending = pendingCharges.find((c: any) => !c.transactionRef) || pendingCharges[0];
+      if (firstPending) {
+        setSelectedChargeId(firstPending.id);
+      }
+    }
+  }, [pendingCharges, selectedChargeId]);
+
+  const activeSpecificCharge = customerCharges.find((c: any) => c.id === selectedChargeId) || pendingCharges[0];
+
+  const fee = activeSpecificCharge
+    ? activeSpecificCharge.amount
+    : (options?.feeAmount && !isPreKyc ? options.feeAmount : 0);
+  const feeName = activeSpecificCharge ? activeSpecificCharge.name : '';
+
+  const pendingChargesCount = pendingCharges.length;
+  const paidChargesCount = paidCharges.length;
+  const totalPendingAmount = pendingCharges.reduce((acc: number, c: any) => acc + c.amount, 0);
+
+  const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
+    setCopied(label);
+    setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleViewInvoice = async (chg: any) => {
+    try {
+      setInvoicePreviewLoading(true);
+      setInvoicePreviewTitle(`${chg.name} Invoice`);
+      setInvoicePreviewOpen(true);
+      const res = await apiClient.get(
+        API_ENDPOINTS.CUSTOMER_CHARGES.INVOICE(chg.id, false),
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      setInvoicePreviewUrl(url);
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.message || 'Failed to preview invoice PDF.');
+      setInvoicePreviewOpen(false);
+    } finally {
+      setInvoicePreviewLoading(false);
+    }
+  };
+
+  const handleDownloadInvoice = async (chg: any) => {
+    try {
+      setDownloadingChargeId(chg.id);
+      setDownloadErrorChargeId(null);
+      setErrorMsg(null);
+      const res = await apiClient.get(
+        API_ENDPOINTS.CUSTOMER_CHARGES.INVOICE(chg.id, true),
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Invoice_${chg.name.replace(/\s+/g, '_')}_${chg.id.slice(0, 6)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      setDownloadErrorChargeId(chg.id);
+      setErrorMsg(err.response?.data?.message || 'Unable to download invoice');
+    } finally {
+      setDownloadingChargeId(null);
+    }
+  };
+
+  const handleSubmitUtr = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!utr || utr.trim().length < 6) {
-      setFeedbackError('Please provide a valid 6-to-50 character UTR / transaction reference number.');
+    if (!utrNumber.trim()) {
+      setErrorMsg('Please enter a valid 12-digit UTR or transaction reference number.');
       return;
     }
-    submitMutation.mutate();
+
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      if (selectedChargeId && activeSpecificCharge) {
+        await apiClient.post(API_ENDPOINTS.CUSTOMER_CHARGES.SUBMIT_UTR(selectedChargeId), {
+          utr: utrNumber.trim(),
+          paymentMethod: selectedMethod,
+          notes: `Customer settlement for ${activeSpecificCharge.name} via ${selectedMethod}`,
+        });
+        refetchCharges();
+      } else {
+        const targetLoanId = loanId || paymentReq?.loanId || 'LN20260906142729';
+        await apiClient.post(API_ENDPOINTS.PAYMENTS.SUBMIT_UTR(targetLoanId), {
+          utr: utrNumber.trim(),
+          paymentMethod: selectedMethod,
+          notes: `Customer fee settlement via ${selectedMethod}`,
+        });
+        refetchPayment();
+      }
+
+      setSuccessMsg('Payment reference submitted successfully! Your charge is now Under Verification.');
+      setShowUtrModal(false);
+      setUtrNumber('');
+      queryClient.invalidateQueries({ queryKey: ['customer-dashboard'] });
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to submit payment UTR');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6 animate-pulse max-w-3xl mx-auto">
-        <div className="h-8 bg-slate-200 rounded w-1/3" />
-        <div className="h-44 bg-slate-200 rounded-xl" />
-        <div className="h-64 bg-slate-200 rounded-xl" />
-      </div>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <Card className="max-w-2xl mx-auto border-red-200 bg-red-50 p-6 text-center">
-        <AlertCircle className="w-8 h-8 text-red-600 mx-auto mb-2" />
-        <h3 className="text-base font-semibold text-red-900">Failed to load payment requirements</h3>
-        <p className="text-xs text-red-700 mt-1 mb-4">Could not retrieve payment information for this loan application.</p>
-        <Button onClick={() => refetch()} size="sm" variant="outline" className="border-red-300">
-          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-          Retry
-        </Button>
-      </Card>
-    );
-  }
-
-  const isPaid = data.paymentStatus === 'PAID';
-  const isUnderVerification = data.paymentStatus === 'UNDER_VERIFICATION';
-  const isRejected = data.paymentStatus === 'REJECTED';
-
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="pb-2 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+    <div className="space-y-8 max-w-5xl mx-auto pb-12 text-[#0B1F3A]">
+      {/* ── TOP HERO BANNER ────────────────────────────────────────────── */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#D9E6F2] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center space-x-2">
-            <CreditCard className="w-6 h-6 text-primary" />
-            <span>Loan Verification Payment</span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-600">
-            Application Reference: <span className="font-mono font-bold text-slate-900">{data.applicationNumber}</span>
-          </p>
-        </div>
-        <div>
-          {isPaid ? (
-            <Badge className="bg-emerald-600 text-white px-3 py-1 text-xs">Payment Verified ✓</Badge>
-          ) : isUnderVerification ? (
-            <Badge className="bg-amber-600 text-white px-3 py-1 text-xs animate-pulse">Under Verification</Badge>
-          ) : isRejected ? (
-            <Badge className="bg-red-600 text-white px-3 py-1 text-xs">Verification Rejected</Badge>
-          ) : (
-            <Badge className="bg-blue-600 text-white px-3 py-1 text-xs">Payment Pending</Badge>
-          )}
-        </div>
-      </div>
-
-      {/* 1. Payment Verified Success Card */}
-      {isPaid && (
-        <Card className="border-emerald-300 bg-emerald-50/80 shadow-sm">
-          <CardContent className="p-5 text-center space-y-3">
-            <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center mx-auto shadow-sm">
-              <CheckCircle2 className="w-7 h-7" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-emerald-950">Verification Payment Confirmed</h3>
-              <p className="text-xs text-emerald-800 mt-1">
-                Your nominal verification fee of ₹{data.chargeAmount} was verified by {data.paymentRecord?.verifiedBy || 'operations'}.
-                Your loan has been approved!
-              </p>
-            </div>
-            <div className="pt-2 flex justify-center space-x-3">
-              <Link to={`/customer/agreement/${data.loanId}`}>
-                <Button className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs h-9">
-                  <FileSignature className="w-4 h-4 mr-1.5" />
-                  Proceed to Loan Agreement
-                  <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 2. Payment Instructions & Transfer Details Card */}
-      <Card className="shadow-sm border-slate-200">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Payment Details & Instructions</CardTitle>
-            <span className="text-xs font-bold text-primary px-2.5 py-1 rounded bg-primary/10">
-              Amount Due: ₹{data.chargeAmount}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-[#EAF4FF] text-[#2563EB] border border-[#CBDDE9]">
+              Charges & Payments
             </span>
           </div>
-          <CardDescription>{data.instructions}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            {/* UPI ID */}
-            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
-              <div>
-                <span className="text-slate-500 block text-[11px]">Primary UPI Handle</span>
-                <span className="font-mono font-bold text-slate-900 text-sm">{data.upiId}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleCopy(data.upiId, 'upi')}
-                className="h-7 px-2 text-slate-600"
-              >
-                {copiedField === 'upi' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </Button>
-            </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B1F3A] tracking-tight">
+            Fee Settlements & Tax Invoices
+          </h1>
+          <p className="text-xs sm:text-sm text-[#52657A] mt-1 leading-relaxed max-w-2xl">
+            Review authorized application charges, complete secure fee settlements, and download official, immutable PDF tax invoices.
+          </p>
+        </div>
 
-            {/* Account Holder */}
-            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-              <span className="text-slate-500 block text-[11px]">Beneficiary Name</span>
-              <span className="font-semibold text-slate-900 text-sm">{data.accountHolderName}</span>
-            </div>
-
-            {/* Bank Account Number */}
-            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
-              <div>
-                <span className="text-slate-500 block text-[11px]">Bank Account Number</span>
-                <span className="font-mono font-bold text-slate-900 text-sm">{data.accountNumber}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleCopy(data.accountNumber, 'acc')}
-                className="h-7 px-2 text-slate-600"
-              >
-                {copiedField === 'acc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </Button>
-            </div>
-
-            {/* IFSC Code */}
-            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
-              <div>
-                <span className="text-slate-500 block text-[11px]">IFSC Code</span>
-                <span className="font-mono font-bold text-slate-900 text-sm">{data.ifscCode}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleCopy(data.ifscCode, 'ifsc')}
-                className="h-7 px-2 text-slate-600"
-              >
-                {copiedField === 'ifsc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </Button>
-            </div>
+        {/* Financial Summary Box */}
+        <div className="flex items-center gap-4 shrink-0 bg-[#F7FAFC] p-4 rounded-2xl border border-[#D9E6F2]">
+          <div className="text-right">
+            <span className="text-[10px] text-[#52657A] uppercase tracking-wider block font-bold">
+              Outstanding Charges
+            </span>
+            <span className="text-xl font-black text-[#0B1F3A] font-mono">
+              ₹{totalPendingAmount.toLocaleString('en-IN')}
+            </span>
           </div>
-        </CardContent>
-      </Card>
+          <div className="h-9 w-px bg-[#D9E6F2]" />
+          <div className="text-right">
+            <span className="text-[10px] text-[#16A34A] uppercase tracking-wider block font-bold">
+              Verified Invoices
+            </span>
+            <span className="text-xl font-black text-[#16A34A] font-mono">
+              {paidChargesCount} Paid
+            </span>
+          </div>
+        </div>
+      </div>
 
-      {/* 3. UTR Reference Submission Form */}
-      {!isPaid && (
-        <Card className="shadow-sm border-slate-200">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center space-x-2">
-              <ShieldCheck className="w-4 h-4 text-primary" />
-              <span>{data.paymentRecord ? 'Update Payment Reference (UTR)' : 'Submit Payment Reference (UTR)'}</span>
-            </CardTitle>
-            <CardDescription>
-              Enter the 12-digit UTR or Transaction Reference number generated by your banking app or UPI.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {feedbackSuccess && (
-                <div className="p-3 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>{feedbackSuccess}</span>
-                </div>
+      {/* Global Alerts */}
+      {successMsg && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start space-x-2.5 animate-in fade-in">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+          <span className="font-semibold leading-relaxed">{successMsg}</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start space-x-2.5 animate-in fade-in">
+          <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <span className="font-semibold leading-relaxed">{errorMsg}</span>
+        </div>
+      )}
+
+      {/* ── SECTION: CHARGES & PAYMENTS ───────────────────────────────── */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-[#0B1F3A] flex items-center gap-2">
+              <Receipt className="w-5 h-5 text-[#2563EB]" />
+              <span>Assigned Application Charges</span>
+            </h2>
+            <p className="text-xs text-[#52657A] mt-0.5">
+              Each charge is processed independently with its own authoritative receipt and tax invoice.
+            </p>
+          </div>
+          <Badge className="bg-[#EAF4FF] text-[#2563EB] border border-[#CBDDE9] text-xs font-bold px-3 py-1">
+            {customerCharges.length > 0 ? `${customerCharges.length} Charges Total` : 'No Active Charges'}
+          </Badge>
+        </div>
+
+        {/* STAGE-AWARE EMPTY STATE: When no charges are currently active for the customer */}
+        {customerCharges.length === 0 ? (
+          <Card className="bg-white border-[#D9E6F2] rounded-3xl shadow-sm overflow-hidden p-8 text-center space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-[#EAF4FF] text-[#2563EB] flex items-center justify-center">
+              {!isKycApproved ? (
+                <ShieldCheck className="w-8 h-8" />
+              ) : (
+                <Receipt className="w-8 h-8" />
               )}
-
-              {feedbackError && (
-                <div className="p-3 rounded bg-red-50 border border-red-200 text-red-800 text-xs flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>{feedbackError}</span>
-                </div>
-              )}
-
-              {isRejected && data.paymentRecord?.rejectionReason && (
-                <div className="p-3 rounded bg-red-50 border border-red-200 text-red-900 text-xs">
-                  <p className="font-bold">Previous Submission Rejected:</p>
-                  <p className="mt-0.5">{data.paymentRecord.rejectionReason}</p>
-                </div>
-              )}
-
-              {isUnderVerification && (
-                <div className="p-3 rounded bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center space-x-2">
-                  <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-spin" />
-                  <span>
-                    UTR <strong>{data.paymentRecord?.transactionRef}</strong> is currently being verified by an operations administrator.
-                  </span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label htmlFor="utrInput" className="text-xs font-semibold text-slate-700">
-                    UTR / Transaction Reference Number <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    id="utrInput"
-                    placeholder="e.g. 324567891234 or UPI-987654"
-                    value={utr}
-                    onChange={(e) => setUtr(e.target.value.toUpperCase())}
-                    className="font-mono text-sm uppercase"
-                    maxLength={50}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label htmlFor="paymentMethodSelect" className="text-xs font-semibold text-slate-700">
-                    Payment Method
-                  </label>
-                  <select
-                    id="paymentMethodSelect"
-                    aria-label="Payment Method"
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full text-xs h-9 px-2.5 rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="UPI">UPI (GPay / PhonePe / Paytm / BHIM)</option>
-                    <option value="NET_BANKING">Net Banking (IMPS / NEFT)</option>
-                    <option value="DEBIT_CARD">Debit Card</option>
-                  </select>
-                </div>
+            </div>
+            <div className="max-w-md mx-auto space-y-2">
+              <h3 className="text-lg font-extrabold text-[#0B1F3A]">
+                {!isKycApproved ? 'No Payment Required Currently' : 'No payment is currently required.'}
+              </h3>
+              <p className="text-xs sm:text-sm text-[#52657A] leading-relaxed">
+                {!isKycApproved
+                  ? 'Payments will appear here when a charge becomes active. Please complete your KYC verification first.'
+                  : 'Payments will appear here when a charge becomes active.'}
+              </p>
+            </div>
+            {!isKycApproved && (
+              <div className="pt-2">
+                <Link to="/customer/kyc">
+                  <Button className="bg-[#2563EB] hover:bg-[#123B66] text-white font-bold text-xs h-10 px-6 rounded-xl shadow-md transition active:scale-95 inline-flex items-center gap-2">
+                    <span>Complete KYC</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </Link>
               </div>
+            )}
+          </Card>
+        ) : (
+          /* List of customer charges: Active + Paid sections */
+          <div className="space-y-6">
+            {/* 1. CURRENT PAYMENT */}
+            {pendingCharges.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-1">
+                  <h3 className="text-sm font-bold text-[#0B1F3A] uppercase tracking-wider">
+                    CURRENT PAYMENT
+                  </h3>
+                </div>
+                {pendingCharges.map((chg: any) => {
+                  const isSelected = selectedChargeId === chg.id;
+                  const hasSubmittedUtr = Boolean(chg.transactionRef);
 
+                  return (
+                    <div
+                      key={chg.id}
+                      className={`p-5 sm:p-6 rounded-2xl border transition-all bg-white shadow-xs ${
+                        isSelected
+                          ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 shadow-md'
+                          : 'border-[#D9E6F2] hover:border-[#CBDDE9]'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base font-bold text-[#0B1F3A]">{chg.name}</span>
+                            {isSelected && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EAF4FF] text-[#2563EB] border border-[#CBDDE9]">
+                                Selected for Settlement
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#52657A]">
+                            {chg.remark || 'Official Application Processing Fee'}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center sm:text-right justify-between sm:justify-end gap-3">
+                          <span className="text-xl font-black text-[#0B1F3A] font-mono">
+                            ₹{chg.amount.toLocaleString('en-IN')}
+                          </span>
+
+                          {hasSubmittedUtr ? (
+                            <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2.5 py-1">
+                              <Clock className="w-3.5 h-3.5 mr-1 text-blue-600" /> Pending Verification
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold px-2.5 py-1">
+                              <AlertCircle className="w-3.5 h-3.5 mr-1 text-amber-600" /> Payment Required
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3.5 border-t border-[#D9E6F2] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div className="text-[11px] text-[#52657A] flex items-center gap-2">
+                          {chg.dueDate ? (
+                            <span>Due Date: <strong>{new Date(chg.dueDate).toLocaleDateString('en-IN')}</strong></span>
+                          ) : (
+                            <span>Settlement: <strong>Immediate settlement required</strong></span>
+                          )}
+                          {chg.transactionRef && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono">UTR: <strong>{chg.transactionRef}</strong></span>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {!hasSubmittedUtr ? (
+                            <Button
+                              size="sm"
+                              onClick={async () => {
+                                setSelectedChargeId(chg.id);
+                                try {
+                                  await apiClient.post('/customer/payments/upi', {
+                                    chargeId: chg.id,
+                                    loanId: chg.loanId || undefined,
+                                  });
+                                } catch {
+                                  // Ignore if already initiated
+                                }
+                                setShowUtrModal(true);
+                              }}
+                              className="bg-[#2563EB] hover:bg-[#123B66] text-white text-xs h-9 px-4 font-bold rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5"
+                            >
+                              <span>Pay Now</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-blue-700 font-semibold bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+                              Payment reference under underwriting verification
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* STAGE 3 CALLOUT: KYC Charge Paid, Loan Documents Pending Upload */}
+            {pendingCharges.length === 0 && paidCharges.length > 0 && !customerCharges.some((c: any) => c.name.toLowerCase().includes('processing')) && (
+              <Card className="bg-[#F0FDF4] border-emerald-200 rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-emerald-900">Your KYC verification is complete!</h3>
+                    <p className="text-xs text-emerald-700 mt-1">
+                      Please upload your loan application documents (PAN Card, etc.) to proceed with processing.
+                    </p>
+                  </div>
+                </div>
+                <Link to="/customer/documents">
+                  <Button className="bg-[#16A34A] hover:bg-[#15803d] text-white font-bold text-xs h-10 px-5 rounded-xl shadow-md shrink-0 flex items-center gap-1.5">
+                    <span>Upload Loan Documents</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </Link>
+              </Card>
+            )}
+
+            {/* STAGE 5 CALLOUT: All Charges Settled */}
+            {pendingCharges.length === 0 && paidCharges.length > 0 && customerCharges.some((c: any) => c.name.toLowerCase().includes('processing')) && (
+              <Card className="bg-[#F0FDF4] border-emerald-200 rounded-3xl p-6 text-center space-y-2">
+                <div className="inline-flex p-3 rounded-full bg-emerald-100 text-emerald-700 mb-1">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-emerald-900">All Application Charges Settled</h3>
+                <p className="text-xs text-emerald-700 max-w-lg mx-auto">
+                  All required application fees have been settled and verified. Your loan application is now queued for underwriting appraisal and sanction.
+                </p>
+              </Card>
+            )}
+
+            {/* 2. PAID CHARGES & TAX INVOICES */}
+            {paidCharges.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between px-1">
+                  <h3 className="text-sm font-bold text-[#0B1F3A] uppercase tracking-wider flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-[#16A34A]" />
+                    <span>PAID PAYMENTS ({paidCharges.length})</span>
+                  </h3>
+                  <span className="text-xs text-[#52657A]">1 Charge = 1 Verified Invoice</span>
+                </div>
+                {paidCharges.map((chg: any) => (
+                  <div
+                    key={chg.id}
+                    className="p-5 sm:p-6 rounded-2xl border border-emerald-200 bg-emerald-50/20 shadow-xs"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base font-bold text-[#0B1F3A]">{chg.name}</span>
+                          <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-2.5 py-0.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Paid ✓
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-[#52657A]">
+                          {chg.remark || 'Application Fee'}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center sm:text-right justify-between sm:justify-end gap-3">
+                        <span className="text-xl font-black text-[#0B1F3A] font-mono">
+                          ₹{chg.amount.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3.5 border-t border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="text-[11px] text-[#52657A] flex items-center gap-2">
+                        <span>Settled: <strong>{new Date(chg.paidAt || chg.updatedAt).toLocaleDateString('en-IN')}</strong></span>
+                        {chg.transactionRef && (
+                          <>
+                            <span>•</span>
+                            <span className="font-mono">UTR: <strong>{chg.transactionRef}</strong></span>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewInvoice(chg)}
+                          className="border-[#D9E6F2] bg-white text-[#0B1F3A] hover:bg-[#F0F6FC] text-xs h-9 px-3 rounded-xl font-semibold shadow-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1 text-[#2563EB]" /> View Invoice
+                        </Button>
+
+                        {downloadErrorChargeId === chg.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-red-600 font-medium">Unable to download invoice</span>
+                            <Button
+                              size="sm"
+                              onClick={() => handleDownloadInvoice(chg)}
+                              className="bg-red-50 text-red-700 hover:bg-red-100 text-xs h-9 px-2.5 rounded-xl border border-red-200"
+                            >
+                              Try Again
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            disabled={downloadingChargeId === chg.id}
+                            onClick={() => handleDownloadInvoice(chg)}
+                            className="bg-[#16A34A] hover:bg-[#15803d] text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-md flex items-center gap-1.5 transition active:scale-95"
+                          >
+                            {downloadingChargeId === chg.id ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Downloading...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download Invoice PDF</span>
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── SECTION: CHOOSE PAYMENT METHOD (WHEN PENDING CHARGE ACTIVE) ─── */}
+      {(((activeSpecificCharge && pendingChargesCount > 0 && !activeSpecificCharge.transactionRef)) || (!customerProfile?.kycStatus && options?.feeAmount && pendingChargesCount === 0 && customerCharges.length === 0)) && (
+        <div className="space-y-4 pt-2">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h2 className="text-lg sm:text-xl font-bold text-[#0B1F3A]">
+                Choose Payment Method
+              </h2>
+              <p className="text-xs text-[#52657A] mt-0.5">
+                Amount payable: <strong className="text-[#0B1F3A] font-mono">₹{fee.toLocaleString('en-IN')}</strong>. Choose your preferred rail to complete transfer.
+              </p>
+            </div>
+            <span className="text-xs font-bold text-[#2563EB] bg-[#EAF4FF] px-3 py-1 rounded-full border border-[#CBDDE9]">
+              Live Banking Rail
+            </span>
+          </div>
+
+          {!hasAnyPaymentMethod ? (
+            <div className="p-6 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2">
+              <div className="font-bold flex items-center space-x-2 text-sm">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Payment Methods Temporarily Unavailable</span>
+              </div>
+              <p className="text-[#52657A]">
+                Online payment rails are currently disabled or undergoing maintenance. Please contact customer support to proceed with your fee settlement.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* 1. UPI Intent & QR Rail */}
+              {upiActive && (
+                <div
+                  onClick={() => setSelectedMethod('UPI')}
+                  className={`p-5 sm:p-6 rounded-2xl border cursor-pointer transition-all bg-white shadow-xs ${
+                    selectedMethod === 'UPI' || selectedMethod === 'QR'
+                      ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 shadow-md'
+                      : 'border-[#D9E6F2] hover:border-[#CBDDE9]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3.5">
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center border ${
+                          selectedMethod === 'UPI' || selectedMethod === 'QR'
+                            ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                            : 'border-[#D9E6F2]'
+                        }`}
+                      >
+                        {(selectedMethod === 'UPI' || selectedMethod === 'QR') && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-[#0B1F3A] flex items-center space-x-2">
+                          <span>UPI</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#EAF4FF] text-[#2563EB] font-bold border border-[#CBDDE9]">
+                            Recommended
+                          </span>
+                        </div>
+                        <div className="text-xs text-[#52657A] mt-0.5">Pay using any UPI app or QR Code</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-[#F7FAFC] border border-[#D9E6F2] text-[#2563EB]">GPay</span>
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-[#F7FAFC] border border-[#D9E6F2] text-[#0B1F3A]">PhonePe</span>
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-[#F7FAFC] border border-[#D9E6F2] text-[#0B1F3A]">Paytm</span>
+                    </div>
+                  </div>
+
+                  {(selectedMethod === 'UPI' || selectedMethod === 'QR') && (
+                    <div className="mt-4 pt-4 border-t border-[#D9E6F2] space-y-4 text-xs">
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-[#F7FAFC] border border-[#D9E6F2]">
+                        <span className="text-[#52657A] font-medium">Authoritative UPI ID:</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(options?.upi.primaryUpiId || 'pay@bank', 'upi');
+                          }}
+                          className="flex items-center space-x-1.5 text-[#2563EB] font-mono font-bold hover:underline"
+                        >
+                          <span>{options?.upi.primaryUpiId || 'pay@bank'}</span>
+                          {copied === 'upi' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+
+                      {/* QR Code */}
+                      <div className="text-center space-y-2 pt-2">
+                        <div className="w-44 h-44 mx-auto p-3 rounded-2xl bg-white flex items-center justify-center shadow-md border border-[#D9E6F2]">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=upi://pay?pa=${options?.upi.primaryUpiId || 'pay@bank'}&am=${fee}&pn=${encodeURIComponent(branding.appName)}`}
+                            alt="Scan UPI QR"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <p className="text-[11px] text-[#52657A]">
+                          Scan using any UPI app to transfer exactly <strong>₹{fee.toLocaleString('en-IN')}</strong>, then submit your 12-digit UTR below.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. Merchant VPA */}
+              {merchantVpaActive && (
+                <div
+                  onClick={() => setSelectedMethod('MERCHANT_VPA')}
+                  className={`p-5 sm:p-6 rounded-2xl border cursor-pointer transition-all bg-white shadow-xs ${
+                    selectedMethod === 'MERCHANT_VPA'
+                      ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 shadow-md'
+                      : 'border-[#D9E6F2] hover:border-[#CBDDE9]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3.5">
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center border ${
+                          selectedMethod === 'MERCHANT_VPA'
+                            ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                            : 'border-[#D9E6F2]'
+                        }`}
+                      >
+                        {selectedMethod === 'MERCHANT_VPA' && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-[#0B1F3A] flex items-center space-x-2">
+                          <QrCode className="w-4 h-4 text-[#2563EB]" />
+                          <span>Merchant UPI ID / VPA</span>
+                        </div>
+                        <div className="text-xs text-[#52657A] mt-0.5">Direct verified transfer to Merchant Virtual Private Address</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Merchant Rail
+                    </span>
+                  </div>
+
+                  {selectedMethod === 'MERCHANT_VPA' && (
+                    <div className="mt-4 pt-4 border-t border-[#D9E6F2] space-y-2 text-xs">
+                      <div className="flex justify-between items-center text-[#52657A]">
+                        <span>Merchant Name:</span>
+                        <span className="font-bold text-[#0B1F3A]">{options?.upi.merchantName || branding.appName}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[#52657A]">
+                        <span>Merchant VPA:</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const vpa = options?.upi.merchantVpa?.vpa || options?.upi.primaryUpiId || 'merchant@bank';
+                            copyToClipboard(vpa, 'merchantVpa');
+                          }}
+                          className="flex items-center space-x-1.5 text-[#2563EB] font-mono font-bold hover:underline"
+                        >
+                          <span>{options?.upi.merchantVpa?.vpa || options?.upi.primaryUpiId || 'merchant@bank'}</span>
+                          {copied === 'merchantVpa' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3. Bank Transfer */}
+              {bankActive && (
+                <div
+                  onClick={() => setSelectedMethod('BANK')}
+                  className={`p-5 sm:p-6 rounded-2xl border cursor-pointer transition-all bg-white shadow-xs ${
+                    selectedMethod === 'BANK'
+                      ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 shadow-md'
+                      : 'border-[#D9E6F2] hover:border-[#CBDDE9]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3.5">
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center border ${
+                          selectedMethod === 'BANK'
+                            ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                            : 'border-[#D9E6F2]'
+                        }`}
+                      >
+                        {selectedMethod === 'BANK' && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-[#0B1F3A] flex items-center space-x-2">
+                          <Landmark className="w-4 h-4 text-[#2563EB]" />
+                          <span>Bank Account / Bank Transfer</span>
+                        </div>
+                        <div className="text-xs text-[#52657A] mt-0.5">Wire transfer directly into official corporate account</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedMethod === 'BANK' && options?.bank && (
+                    <div className="mt-4 pt-4 border-t border-[#D9E6F2] space-y-2.5 text-xs">
+                      <div className="flex justify-between items-center text-[#52657A]">
+                        <span>Bank Name:</span>
+                        <span className="font-bold text-[#0B1F3A]">{options.bank.bankName}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[#52657A]">
+                        <span>Account Holder:</span>
+                        <span className="font-bold text-[#0B1F3A]">{options.bank.accountHolder}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[#52657A]">
+                        <span>Account Number:</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(options.bank.accountNumber, 'acc');
+                          }}
+                          className="flex items-center space-x-1.5 text-[#2563EB] font-mono font-bold hover:underline"
+                        >
+                          <span>{options.bank.accountNumber}</span>
+                          {copied === 'acc' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <div className="flex justify-between items-center text-[#52657A]">
+                        <span>IFSC Code:</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(options.bank.ifsc, 'ifsc');
+                          }}
+                          className="flex items-center space-x-1.5 text-[#2563EB] font-mono font-bold hover:underline"
+                        >
+                          <span>{options.bank.ifsc}</span>
+                          {copied === 'ifsc' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 4. Payment Link */}
+              {linksActive && (
+                <div
+                  onClick={() => setSelectedMethod('LINK')}
+                  className={`p-5 sm:p-6 rounded-2xl border cursor-pointer transition-all bg-white shadow-xs ${
+                    selectedMethod === 'LINK'
+                      ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 shadow-md'
+                      : 'border-[#D9E6F2] hover:border-[#CBDDE9]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3.5">
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center border ${
+                          selectedMethod === 'LINK'
+                            ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                            : 'border-[#D9E6F2]'
+                        }`}
+                      >
+                        {selectedMethod === 'LINK' && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-[#0B1F3A] flex items-center space-x-2">
+                          <ExternalLink className="w-4 h-4 text-[#2563EB]" />
+                          <span>Official Payment Gateway Link</span>
+                        </div>
+                        <div className="text-xs text-[#52657A] mt-0.5">Pay via debit/credit card or netbanking portal</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedMethod === 'LINK' && options?.paymentLinks && (
+                    <div className="mt-4 pt-4 border-t border-[#D9E6F2] space-y-2 text-xs">
+                      {options.paymentLinks.map((link) => (
+                        <a
+                          key={link.id}
+                          href={link.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-3 rounded-xl bg-[#F7FAFC] hover:bg-[#EAF4FF] border border-[#D9E6F2] flex items-center justify-between text-[#2563EB] font-bold transition"
+                        >
+                          <span>{link.title}</span>
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* Action Button: Pay Securely */}
+          <Button
+            onClick={() => setShowUtrModal(true)}
+            disabled={!hasAnyPaymentMethod}
+            className="w-full h-14 bg-[#2563EB] hover:bg-[#123B66] text-white font-bold rounded-2xl text-base shadow-xl shadow-blue-500/20 flex items-center justify-center gap-2 transition active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span>Pay Securely</span>
+            <ArrowRight className="w-5 h-5" />
+          </Button>
+        </div>
+      )}
+
+      {/* Trust Badges */}
+      <div className="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+        <div className="p-4 rounded-2xl bg-white border border-[#D9E6F2] shadow-xs flex items-center justify-center gap-2.5">
+          <Lock className="w-4 h-4 text-[#16A34A]" />
+          <span className="text-xs font-bold text-[#0B1F3A]">Encrypted 256-Bit SSL</span>
+        </div>
+        <div className="p-4 rounded-2xl bg-white border border-[#D9E6F2] shadow-xs flex items-center justify-center gap-2.5">
+          <ShieldCheck className="w-4 h-4 text-[#2563EB]" />
+          <span className="text-xs font-bold text-[#0B1F3A]">100% Verified Rails</span>
+        </div>
+        <div className="p-4 rounded-2xl bg-white border border-[#D9E6F2] shadow-xs flex items-center justify-center gap-2.5">
+          <Sparkles className="w-4 h-4 text-[#7C3AED]" />
+          <span className="text-xs font-bold text-[#0B1F3A]">Authoritative Invoicing</span>
+        </div>
+      </div>
+
+      {/* ── SUBMIT UTR MODAL ──────────────────────────────────────────── */}
+      {showUtrModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-[#D9E6F2] rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-5 shadow-2xl animate-in zoom-in-95">
+            <div className="flex justify-between items-center pb-3 border-b border-[#D9E6F2]">
+              <div>
+                <h3 className="font-extrabold text-base text-[#0B1F3A]">
+                  Enter Transaction Reference
+                </h3>
+                <span className="text-xs text-[#52657A]">{feeName} • ₹{fee.toLocaleString('en-IN')}</span>
+              </div>
+              <button
+                onClick={() => setShowUtrModal(false)}
+                className="text-[#52657A] hover:text-[#0B1F3A] p-1.5 rounded-lg hover:bg-[#F0F6FC] transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-[#52657A] leading-relaxed">
+              Please enter the 12-digit UTR or transaction reference number generated by your banking or UPI app:
+            </p>
+
+            <form onSubmit={handleSubmitUtr} className="space-y-4">
               <div className="space-y-1.5">
-                <label htmlFor="paymentNotes" className="text-xs font-semibold text-slate-700">Optional Notes / Remarks</label>
+                <label className="block text-[11px] font-bold text-[#0B1F3A] uppercase tracking-wider">
+                  12-Digit UTR Reference Number *
+                </label>
                 <Input
-                  id="paymentNotes"
-                  placeholder="e.g. Paid from HDFC Bank account ending 4321"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  maxLength={300}
+                  value={utrNumber}
+                  onChange={(e) => setUtrNumber(e.target.value)}
+                  placeholder="e.g. 428910482910"
+                  className="bg-[#F7FAFC] border-[#D9E6F2] text-[#0B1F3A] font-mono text-base h-12 rounded-xl focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10"
+                  autoFocus
+                  required
                 />
               </div>
 
-              <Button
-                type="submit"
-                disabled={submitMutation.isPending || !utr.trim()}
-                className="w-full text-xs h-10"
-              >
-                {submitMutation.isPending ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 mr-1.5 animate-spin" />
-                    Submitting UTR...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                    {data.paymentRecord ? 'Update Transaction Reference' : 'Submit Reference for Verification'}
-                  </>
-                )}
-              </Button>
+              <div className="flex space-x-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowUtrModal(false)}
+                  className="flex-1 h-11 border-[#D9E6F2] text-[#52657A] hover:bg-[#F0F6FC] text-xs font-semibold rounded-xl"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || !utrNumber.trim()}
+                  className="flex-1 h-11 bg-[#2563EB] hover:bg-[#123B66] text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <span>Submit Payment</span>
+                  )}
+                </Button>
+              </div>
             </form>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
+
+      {/* ── INVOICE PREVIEW DIALOG ────────────────────────────────────── */}
+      <Dialog open={invoicePreviewOpen} onOpenChange={setInvoicePreviewOpen}>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-6 bg-white rounded-3xl border border-[#D9E6F2] shadow-2xl">
+          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-[#D9E6F2]">
+            <div>
+              <DialogTitle className="text-lg font-bold text-[#0B1F3A]">{invoicePreviewTitle}</DialogTitle>
+              <DialogDescription className="text-xs text-[#52657A]">
+                Official immutable tax invoice generated from authoritative financial records.
+              </DialogDescription>
+            </div>
+            {invoicePreviewUrl && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  const a = document.createElement('a');
+                  a.href = invoicePreviewUrl;
+                  a.download = `${invoicePreviewTitle.replace(/\s+/g, '_')}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}
+                className="bg-[#16A34A] hover:bg-[#15803d] text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-xs flex items-center gap-1.5 mr-6"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download PDF</span>
+              </Button>
+            )}
+          </DialogHeader>
+
+          <div className="flex-1 bg-[#F7FAFC] rounded-2xl overflow-hidden mt-3 relative border border-[#D9E6F2]">
+            {invoicePreviewLoading ? (
+              <div className="flex flex-col items-center justify-center h-full space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin text-[#2563EB]" />
+                <span className="text-xs text-[#52657A]">Rendering invoice PDF...</span>
+              </div>
+            ) : invoicePreviewUrl ? (
+              <iframe
+                src={invoicePreviewUrl}
+                title={invoicePreviewTitle}
+                className="w-full h-full border-0 rounded-2xl"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-xs text-[#52657A]">
+                Invoice preview unavailable.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+
+export default CustomerPaymentPage;

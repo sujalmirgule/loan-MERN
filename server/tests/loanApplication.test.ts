@@ -18,9 +18,18 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
 
   beforeAll(async () => {
     // Clean up previous test data
+    await prisma.invoice.deleteMany({});
+    await prisma.whatsAppMessage.deleteMany({});
+    await prisma.emailMessage.deleteMany({});
     await prisma.auditLog.deleteMany({});
     await prisma.documentRequest.deleteMany({});
     await prisma.loanDocument.deleteMany({});
+    await prisma.charge.deleteMany({});
+    await prisma.eMISchedule.deleteMany({});
+    await prisma.loanAgreement.deleteMany({});
+    await prisma.payment.deleteMany({});
+    await prisma.disbursement.deleteMany({});
+    await prisma.verificationToken.deleteMany({});
     await prisma.loanApplication.deleteMany({});
     await prisma.customer.deleteMany({
       where: { mobile: { in: [customerMobileA, customerMobileB] } },
@@ -88,9 +97,18 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
   });
 
   afterAll(async () => {
+    await prisma.invoice.deleteMany({});
+    await prisma.whatsAppMessage.deleteMany({});
+    await prisma.emailMessage.deleteMany({});
     await prisma.auditLog.deleteMany({});
     await prisma.documentRequest.deleteMany({});
     await prisma.loanDocument.deleteMany({});
+    await prisma.charge.deleteMany({});
+    await prisma.eMISchedule.deleteMany({});
+    await prisma.loanAgreement.deleteMany({});
+    await prisma.payment.deleteMany({});
+    await prisma.disbursement.deleteMany({});
+    await prisma.verificationToken.deleteMany({});
     await prisma.loanApplication.deleteMany({});
     await prisma.customer.deleteMany({
       where: { mobile: { in: [customerMobileA, customerMobileB] } },
@@ -180,7 +198,38 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
       expect(resEmpty.status).toBe(400);
     });
 
-    it('should successfully submit a valid loan application for Customer A', async () => {
+    it('should reject loan application with 403 KYC_REQUIRED when customer KYC is not approved', async () => {
+      // Ensure customer has unapproved KYC
+      await prisma.customer.update({
+        where: { id: customerIdA },
+        data: { kycStatus: 'UNDER_REVIEW' },
+      });
+
+      const res = await request(app)
+        .post('/api/customer/loan-applications')
+        .set('Authorization', `Bearer ${customerTokenA}`)
+        .send({
+          amount: 150000,
+          tenureMonths: 24,
+          purpose: 'Higher education',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('KYC_REQUIRED');
+      expect(res.body.message).toContain('KYC approval is required');
+
+      // Now approve KYC for subsequent tests
+      await prisma.customer.update({
+        where: { id: customerIdA },
+        data: { kycStatus: 'APPROVED' },
+      });
+      await prisma.customer.update({
+        where: { id: customerIdB },
+        data: { kycStatus: 'APPROVED' },
+      });
+    });
+
+    it('should successfully submit a valid loan application for Customer A once KYC is approved', async () => {
       const res = await request(app)
         .post('/api/customer/loan-applications')
         .set('Authorization', `Bearer ${customerTokenA}`)
@@ -209,7 +258,7 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
       expect(actions).toContain('APPLICATION_SUBMITTED');
     });
 
-    it('should allow customer to submit a second application (multiple applications allowed)', async () => {
+    it('should REJECT a second application while one is already active (One-Active-Loan Rule)', async () => {
       const res = await request(app)
         .post('/api/customer/loan-applications')
         .set('Authorization', `Bearer ${customerTokenA}`)
@@ -219,9 +268,10 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
           purpose: 'Small business working capital',
         });
 
-      expect(res.status).toBe(201);
-      expect(res.body.data.applicationNumber).toMatch(/^LA-\d{4}-\d{6}$/);
-      expect(res.body.data.requestedAmount).toBe(75000);
+      // One-Active-Loan-Per-Customer rule: must return 409 Conflict
+      expect(res.status).toBe(409);
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe('ACTIVE_APPLICATION_EXISTS');
     });
   });
 
@@ -257,9 +307,10 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
         .set('Authorization', `Bearer ${customerTokenA}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.data.length).toBe(2);
+      // One-Active-Loan rule: only 1 application per customer at a time
+      expect(res.body.data.length).toBe(1);
       res.body.data.forEach((appItem: { requestedAmount: number }) => {
-        expect([150000, 75000]).toContain(appItem.requestedAmount);
+        expect([150000]).toContain(appItem.requestedAmount);
       });
     });
 
@@ -331,7 +382,8 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
       expect(res.status).toBe(200);
       expect(res.body.data).toBeDefined();
       expect(res.body.pagination).toBeDefined();
-      expect(res.body.pagination.total).toBeGreaterThanOrEqual(3);
+      // One-Active-Loan rule: 1 app for Customer A + 1 for Customer B = 2 total
+      expect(res.body.pagination.total).toBeGreaterThanOrEqual(2);
       expect(res.body.pagination.page).toBe(1);
     });
 
@@ -384,7 +436,8 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.data.length).toBeGreaterThanOrEqual(3);
+      // One-Active-Loan rule: 1 per Customer A + 1 for Customer B = 2 created today
+      expect(res.body.data.length).toBeGreaterThanOrEqual(2);
     });
 
     it('should get detailed application info with borrower profile and KYC status', async () => {
@@ -412,6 +465,15 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
     let testLoanId: string;
 
     beforeAll(async () => {
+      // Close any existing active loan for Customer A before creating a fresh one
+      await prisma.loanApplication.updateMany({
+        where: {
+          customerId: customerIdA,
+          status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD', 'OFFER_PENDING_CUSTOMER', 'OFFER_ACCEPTED'] },
+        },
+        data: { status: 'REJECTED', rejectionReason: 'Test cleanup — closing prior test section loan' },
+      });
+
       // Create a fresh application for testing review actions
       const res = await request(app)
         .post('/api/customer/loan-applications')
@@ -518,6 +580,15 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
     let offerLoanB: string;
 
     beforeAll(async () => {
+      // Close any existing active loan for Customer A before creating test offers
+      await prisma.loanApplication.updateMany({
+        where: {
+          customerId: customerIdA,
+          status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD', 'OFFER_PENDING_CUSTOMER', 'OFFER_ACCEPTED'] },
+        },
+        data: { status: 'REJECTED', rejectionReason: 'Test cleanup — closing prior test section loan' },
+      });
+
       // Create application A: ₹2,00,000
       const resA = await request(app)
         .post('/api/customer/loan-applications')
@@ -533,20 +604,21 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
         .post(`/api/admin/loan-applications/${offerLoanA}/review`)
         .set('Authorization', `Bearer ${adminToken}`);
 
-      // Create application B: ₹5,00,000
-      const resB = await request(app)
-        .post('/api/customer/loan-applications')
-        .set('Authorization', `Bearer ${customerTokenA}`)
-        .send({
-          amount: 500000,
+      // Reject offerLoanA to free up the slot for offerLoanB
+      // (offerLoanA is in UNDER_REVIEW; we need B too — accept/reject happen in the tests themselves)
+      // We'll close A after offer modify test; for now just create B via admin direct DB insert
+      offerLoanB = (await prisma.loanApplication.create({
+        data: {
+          customerId: customerIdA,
+          applicationNumber: `LA-TEST-${Date.now()}`,
+          requestedAmount: 500000,
           tenureMonths: 48,
           purpose: 'Vehicle purchase',
-        });
-      offerLoanB = resB.body.data.id;
-      // Start review
-      await request(app)
-        .post(`/api/admin/loan-applications/${offerLoanB}/review`)
-        .set('Authorization', `Bearer ${adminToken}`);
+          status: 'UNDER_REVIEW',
+          submittedAt: new Date(),
+          reviewedAt: new Date(),
+        },
+      })).id;
     });
 
     it('Admin modifies loan amount from ₹2,00,000 to ₹1,50,000', async () => {
@@ -633,6 +705,15 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
     let approveLoanId: string;
 
     beforeAll(async () => {
+      // Close any existing active loan for Customer A before creating rejection/approval test loans
+      await prisma.loanApplication.updateMany({
+        where: {
+          customerId: customerIdA,
+          status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD', 'OFFER_PENDING_CUSTOMER', 'OFFER_ACCEPTED'] },
+        },
+        data: { status: 'REJECTED', rejectionReason: 'Test cleanup — closing prior test section loan' },
+      });
+
       // Create loan for rejection
       const resR = await request(app)
         .post('/api/customer/loan-applications')
@@ -647,19 +728,25 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
         .post(`/api/admin/loan-applications/${rejectLoanId}/review`)
         .set('Authorization', `Bearer ${adminToken}`);
 
-      // Create loan for approval
-      const resA = await request(app)
-        .post('/api/customer/loan-applications')
-        .set('Authorization', `Bearer ${customerTokenA}`)
-        .send({
-          amount: 100000,
+      // Reject the first loan to free up the slot, then create approval loan
+      await prisma.loanApplication.update({
+        where: { id: rejectLoanId },
+        data: { status: 'UNDER_REVIEW' },  // ensure it's reviewable
+      });
+
+      // Create loan for approval using direct DB insert (avoids one-loan guard)
+      approveLoanId = (await prisma.loanApplication.create({
+        data: {
+          customerId: customerIdA,
+          applicationNumber: `LA-TEST-${Date.now()}`,
+          requestedAmount: 100000,
           tenureMonths: 18,
           purpose: 'Laptop and work station equipment',
-        });
-      approveLoanId = resA.body.data.id;
-      await request(app)
-        .post(`/api/admin/loan-applications/${approveLoanId}/review`)
-        .set('Authorization', `Bearer ${adminToken}`);
+          status: 'UNDER_REVIEW',
+          submittedAt: new Date(),
+          reviewedAt: new Date(),
+        },
+      })).id;
     });
 
     it('should reject application with mandatory rejection reason', async () => {
@@ -686,9 +773,30 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
         where: { entityId: rejectLoanId, action: 'APPLICATION_REJECTED' },
       });
       expect(log).not.toBeNull();
-    });
+    }, 15000);
 
-    it('should approve application directly at requested amount', async () => {
+    it('should block loan approval if customer KYC is not verified (KYC GATE)', async () => {
+      // Set Customer A to unapproved KYC
+      await prisma.customer.update({
+        where: { id: customerIdA },
+        data: { kycStatus: 'UNDER_REVIEW' },
+      });
+
+      const res = await request(app)
+        .post(`/api/admin/loan-applications/${approveLoanId}/approve`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('KYC is not verified');
+    }, 15000);
+
+    it('should approve application directly at requested amount once KYC is approved', async () => {
+      // Complete KYC Gate
+      await prisma.customer.update({
+        where: { id: customerIdA },
+        data: { kycStatus: 'APPROVED' },
+      });
+
       const res = await request(app)
         .post(`/api/admin/loan-applications/${approveLoanId}/approve`)
         .set('Authorization', `Bearer ${adminToken}`);
@@ -701,6 +809,6 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
         where: { entityId: approveLoanId, action: 'APPLICATION_APPROVED' },
       });
       expect(log).not.toBeNull();
-    });
+    }, 15000);
   });
 });

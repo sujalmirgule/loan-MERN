@@ -151,8 +151,17 @@ describe('Customer Profile & KYC Frontend Flow', () => {
 
   describe('CustomerDocuments Page', () => {
     it('renders overall KYC status banner and document cards with reviewer feedback', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: { data: mockDocumentsData },
+      vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+        if (url.includes('documents')) {
+          return { data: { data: mockDocumentsData } } as any;
+        }
+        if (url.includes('loans')) {
+          return { data: { data: [] } } as any;
+        }
+        if (url.includes('charges')) {
+          return { data: { data: [] } } as any;
+        }
+        return { data: { data: {} } } as any;
       });
 
       render(
@@ -164,8 +173,15 @@ describe('Customer Profile & KYC Frontend Flow', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(/Action Required: Document Re-upload/i)).toBeInTheDocument();
-        expect(screen.getByText(/Corners are cropped. Upload full card./i)).toBeInTheDocument();
+        expect(screen.getByText(/Re-upload Required/i)).toBeInTheDocument();
+      });
+
+      // Switch to KYC tab
+      const kycTab = screen.getByRole('button', { name: /KYC UPLOADS/i });
+      fireEvent.click(kycTab);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Corners are cropped/i)).toBeInTheDocument();
         expect(screen.getByText('3 Months Salary Bank Statement')).toBeInTheDocument();
       });
 
@@ -176,8 +192,17 @@ describe('Customer Profile & KYC Frontend Flow', () => {
     });
 
     it('opens upload modal when clicking upload button', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: { data: mockDocumentsData },
+      vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+        if (url.includes('documents')) {
+          return { data: { data: mockDocumentsData } } as any;
+        }
+        if (url.includes('loans')) {
+          return { data: { data: [] } } as any;
+        }
+        if (url.includes('charges')) {
+          return { data: { data: [] } } as any;
+        }
+        return { data: { data: {} } } as any;
       });
 
       render(
@@ -188,8 +213,12 @@ describe('Customer Profile & KYC Frontend Flow', () => {
         </AuthProvider>
       );
 
+      // Switch to KYC tab
+      const kycTab = await screen.findByRole('button', { name: /KYC UPLOADS/i });
+      fireEvent.click(kycTab);
+
       await waitFor(() => {
-        expect(screen.getByText(/Action Required/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Re-upload Corrected Version/i })).toBeInTheDocument();
       });
 
       const reuploadBtn = screen.getByRole('button', { name: /Re-upload Corrected Version/i });
@@ -204,33 +233,46 @@ describe('Customer Profile & KYC Frontend Flow', () => {
 
   describe('AdminKycList Page', () => {
     it('renders KYC queue table and filter buttons', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
+      vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+        if (url.includes('states')) {
+          return { data: ['Karnataka', 'Maharashtra'] } as any;
+        }
+        return {
           data: {
-            customers: [
-              {
-                id: 'cust-1',
-                fullName: 'Kiran Rao',
-                mobile: '9123456780',
-                email: 'kiran@example.com',
-                state: 'Karnataka',
-                city: 'Bengaluru',
-                accountStatus: 'ACTIVE',
-                kycStatus: 'UNDER_REVIEW',
-                createdAt: '2026-01-01T00:00:00.000Z',
-                updatedAt: '2026-01-01T00:00:00.000Z',
-                docStats: {
-                  total: 3,
-                  approved: 2,
-                  pending: 1,
-                  reuploadRequired: 0,
-                  rejected: 0,
+            data: {
+              customers: [
+                {
+                  id: 'cust-1',
+                  fullName: 'Kiran Rao',
+                  mobile: '9123456780',
+                  email: 'kiran@example.com',
+                  state: 'Karnataka',
+                  city: 'Bengaluru',
+                  accountStatus: 'ACTIVE',
+                  kycStatus: 'UNDER_REVIEW',
+                  createdAt: '2026-01-01T00:00:00.000Z',
+                  updatedAt: '2026-01-01T00:00:00.000Z',
+                  docStats: {
+                    total: 3,
+                    approved: 2,
+                    pending: 1,
+                    reuploadRequired: 0,
+                    rejected: 0,
+                  },
                 },
+              ],
+              counts: {
+                all: 1,
+                pendingVerification: 1,
+                pendingApproval: 0,
+                verified: 0,
+                rejected: 0,
+                correctionRequired: 0,
               },
-            ],
-            pagination: { total: 1, page: 1, limit: 20, totalPages: 1 },
+              pagination: { total: 1, page: 1, limit: 20, totalPages: 1 },
+            },
           },
-        },
+        } as any;
       });
 
       render(
@@ -243,14 +285,14 @@ describe('Customer Profile & KYC Frontend Flow', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Kiran Rao')).toBeInTheDocument();
-        expect(screen.getByText(/2 \/ 3 Approved/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Review KYC/i })).toBeInTheDocument();
+        expect(screen.getByText(/3 Docs/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /View KYC/i })).toBeInTheDocument();
       });
 
       // Check filter options
-      expect(screen.getByRole('button', { name: 'Under Review' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Re-upload Needed' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'All Customers' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /All KYC/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Pending Verification/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Correction Required/i })).toBeInTheDocument();
     });
   });
 });

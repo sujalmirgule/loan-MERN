@@ -47,10 +47,12 @@ export const AdminAuditLogsPage: React.FC = () => {
       params.append('limit', '20');
 
       const res = await api.get(`${API_ENDPOINTS.AUDIT.LIST}?${params.toString()}`);
-      setLogs(res.data?.data || []);
-      if (res.data?.pagination) {
-        setTotalPages(res.data.pagination.totalPages || 1);
-        setTotalCount(res.data.pagination.total || 0);
+      const list = Array.isArray(res?.data) ? res.data : (res?.data?.data || res?.data || []);
+      setLogs(list);
+      const pagination = res?.pagination || res?.data?.pagination;
+      if (pagination) {
+        setTotalPages(pagination.totalPages || 1);
+        setTotalCount(pagination.total || 0);
       }
     } catch (err) {
       console.error('Failed to load audit logs:', err);
@@ -106,7 +108,7 @@ export const AdminAuditLogsPage: React.FC = () => {
           </div>
           <button
             type="submit"
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition"
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-text-primary text-sm font-semibold rounded-lg shadow-sm transition"
           >
             Search
           </button>

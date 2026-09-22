@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from '../contexts/AuthContext';
 import { CustomerLogin } from '../pages/customer/CustomerLogin';
@@ -34,7 +34,7 @@ describe('Frontend Authentication Flow', () => {
         </AuthProvider>
       );
 
-      expect(screen.getByText(/Welcome to Loan Approve/i)).toBeInTheDocument();
+      expect(screen.getByText(/Welcome to/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/Mobile Number/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Continue to Portal/i })).toBeInTheDocument();
       // Ensure NO password or OTP input exists
@@ -68,7 +68,7 @@ describe('Frontend Authentication Flow', () => {
   });
 
   describe('Customer Registration Screen', () => {
-    it('renders all required registration fields and state selector', () => {
+    it('renders step 1 loan requirements and navigates to step 2 identity fields', async () => {
       render(
         <AuthProvider>
           <BrowserRouter>
@@ -77,19 +77,26 @@ describe('Frontend Authentication Flow', () => {
         </AuthProvider>
       );
 
-      expect(screen.getByText(/Borrower Registration/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Full Name/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Mobile Number/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Email Address/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Monthly Income/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Residential Address/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/^State$/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/^City$/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Aadhaar Number/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Register & Continue/i })).toBeInTheDocument();
+      // Step 1: Loan Requirements
+      expect(screen.getByText(/What do you need a loan for/i)).toBeInTheDocument();
+      expect(screen.getByText(/Select Loan Type/i)).toBeInTheDocument();
+      expect(screen.getByText(/Required Amount/i)).toBeInTheDocument();
+      expect(screen.getByText(/Estimated EMI/i)).toBeInTheDocument();
+
+      const nextBtn = screen.getByRole('button', { name: /Next Step/i });
+      fireEvent.click(nextBtn);
+
+      // Step 2: Personal Details
+      await waitFor(() => {
+        expect(screen.getByText(/Personal Details/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Full Name/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Mobile Number/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Email Address/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Aadhaar Number/i)).toBeInTheDocument();
+      });
     });
 
-    it('dynamically populates cities when a state is selected', () => {
+    it('dynamically populates cities when navigating to address step and selecting a state', async () => {
       render(
         <AuthProvider>
           <BrowserRouter>
@@ -98,10 +105,31 @@ describe('Frontend Authentication Flow', () => {
         </AuthProvider>
       );
 
-      const stateSelect = screen.getByLabelText(/^State$/i);
-      const citySelect = screen.getByLabelText(/^City$/i);
+      // Step 1 -> Step 2
+      fireEvent.click(screen.getByRole('button', { name: /Next Step/i }));
 
-      // Initially city is disabled or empty
+      // Fill Step 2 valid details
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Full Name/i)).toBeInTheDocument();
+      });
+
+      fireEvent.change(screen.getByLabelText(/Full Name/i), { target: { value: 'Ajay Kumar' } });
+      fireEvent.change(screen.getByLabelText(/Mobile Number/i), { target: { value: '9876543210' } });
+      fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: 'ajay@example.com' } });
+      fireEvent.change(screen.getByLabelText(/Aadhaar Number/i), { target: { value: '123456789012' } });
+
+      // Step 2 -> Step 3
+      fireEvent.click(screen.getByRole('button', { name: /Next Step/i }));
+
+      // Step 3: Address & Verification
+      await waitFor(() => {
+        expect(screen.getByLabelText(/State/i)).toBeInTheDocument();
+      });
+
+      const stateSelect = screen.getByLabelText(/State/i);
+      const citySelect = screen.getByLabelText(/City/i);
+
+      // Initially city is disabled
       expect(citySelect).toBeDisabled();
 
       // Select Maharashtra

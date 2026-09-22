@@ -33,6 +33,13 @@ async function startServer() {
 
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
+
+    process.on('uncaughtException', (err) => {
+      logger.error('Uncaught Exception:', err);
+    });
+    process.on('unhandledRejection', (reason, promise) => {
+      logger.error('Unhandled Rejection at promise', reason, { promise: String(promise) });
+    });
   } catch (error) {
     logger.error('Fatal error during backend startup', error);
     process.exit(1);

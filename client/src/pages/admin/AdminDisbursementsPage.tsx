@@ -170,7 +170,7 @@ export const AdminDisbursementsPage: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-sm transition"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-background hover:bg-secondary text-text-primary text-sm font-semibold rounded-lg shadow-sm transition"
           >
             <PlusCircle className="w-5 h-5" />
             Record Disbursement
@@ -438,7 +438,7 @@ export const AdminDisbursementsPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={submitting || !selectedLoanId}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg text-sm font-semibold shadow transition"
+                  className="px-5 py-2 bg-primary text-background hover:bg-secondary disabled:bg-blue-300 text-text-primary rounded-lg text-sm font-semibold shadow transition"
                 >
                   {submitting ? 'Recording...' : 'Confirm Disbursement'}
                 </button>

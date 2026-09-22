@@ -21,6 +21,22 @@ function getParamId(req: Request): string {
 export const loanApplicationController = {
   // --- Customer Controllers ---
 
+  async checkEligibility(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user || req.user.role !== 'CUSTOMER') {
+        throw new AppError(401, 'Authentication required as a customer');
+      }
+
+      const result = await loanApplicationService.checkEligibility(req.user.id);
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   async createApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user || req.user.role !== 'CUSTOMER') {
@@ -255,10 +271,11 @@ export const loanApplicationController = {
 
       const id = getParamId(req);
       const parsed = rejectApplicationSchema.parse(req.body);
+      const rejectionReason = parsed.rejectionReason || parsed.reason || 'Does not meet underwriting requirements';
       const updated = await loanApplicationService.rejectApplication(
         id,
         req.user,
-        parsed.rejectionReason,
+        rejectionReason,
         req.ip
       );
 
@@ -282,6 +299,7 @@ export const loanApplicationController = {
       const updated = await loanApplicationService.approveApplication(
         id,
         req.user,
+        req.body,
         req.ip
       );
 

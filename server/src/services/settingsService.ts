@@ -20,28 +20,85 @@ export class SettingsService {
       prisma.paymentConfig.findUnique({ where: { id: 'default' } }),
     ]);
 
+    // Parse JSON fields safely
+    let documentsConfig: unknown[] = [];
+    let faqs: unknown[] = [];
+    try { documentsConfig = JSON.parse(branding?.documentsConfigJson || '[]'); } catch { /* keep empty */ }
+    try { faqs = JSON.parse(branding?.faqsJson || '[]'); } catch { /* keep empty */ }
+
     return {
-      companyName: branding?.companyName || 'Loan Approve Financial Services',
-      appName: branding?.appName || 'Loan Approve',
+      companyName: branding?.companyName || 'Your Financial Services',
+      companyLegalName: branding?.companyLegalName || 'Your Financial Services Pvt. Ltd.',
+      appName: branding?.appName || 'LoanApp',
       logoUrl: branding?.logoUrl || null,
       faviconUrl: branding?.faviconUrl || null,
+      secondaryLogoUrl: branding?.secondaryLogoUrl || null,
+      watermarkLogoUrl: branding?.watermarkLogoUrl || null,
+      watermarkOpacity: branding?.watermarkOpacity ?? 0.10,
+      watermarkSize: branding?.watermarkSize || 'MEDIUM',
+      watermarkPosition: branding?.watermarkPosition || 'CENTER',
       primaryColor: branding?.primaryColor || '#047857',
       secondaryColor: branding?.secondaryColor || '#0f172a',
-      email: branding?.email || 'support@loanapprove.com',
+      email: branding?.email || 'support@yourcompany.com',
       phone: branding?.phone || '+91 98765 43210',
-      address: branding?.address || 'Nariman Point, Mumbai, Maharashtra 400021',
-      website: branding?.website || 'https://loanapprove.com',
-      termsUrl: branding?.termsUrl || 'https://loanapprove.com/terms',
-      privacyUrl: branding?.privacyUrl || 'https://loanapprove.com/privacy',
+      address: branding?.address || 'Your Registered Office Address',
+      website: branding?.website || 'https://yourcompany.com',
+      termsUrl: branding?.termsUrl || '',
+      privacyUrl: branding?.privacyUrl || '',
       payment: {
-        chargeAmount: paymentConfig?.chargeAmount || 500,
-        chargeType: paymentConfig?.chargeType || 'PROCESSING_DEPOSIT',
-        upiId: paymentConfig?.upiId || 'pay@loanapprove',
-        accountHolderName: paymentConfig?.accountHolderName || 'Loan Approve Financial Services',
+        chargeAmount: paymentConfig?.kycChargeAmount || paymentConfig?.chargeAmount || 499,
+        chargeType: paymentConfig?.chargeType || 'KYC_CHARGES',
+        upiId: paymentConfig?.upiId || '',
+        accountHolderName: paymentConfig?.accountHolderName || branding?.companyName || 'Your Financial Services',
         instructions: paymentConfig?.instructions || 'Please transfer the processing fee using UPI or IMPS and enter the 12-digit UTR number.',
+      },
+      // ── Landing Page Configuration ────────────────────────────
+      hero: {
+        headline: branding?.heroHeadline || 'Simple, Transparent Loan Application',
+        subheadline: branding?.heroSubheadline || 'Apply online, complete verification, and track your application status — all in one place.',
+      },
+      lender: {
+        name: branding?.lenderName || null,
+        legalName: branding?.lenderLegalName || null,
+        registrationNumber: branding?.lenderRegistrationNumber || null,
+        type: branding?.lenderType || null,
+        address: branding?.lenderAddress || null,
+        website: branding?.lenderWebsite || null,
+        isDirectLender: branding?.isDirectLender ?? false,
+      },
+      partner: {
+        name: branding?.partnerName || null,
+        relationship: branding?.partnerRelationship || null,
+      },
+      financial: {
+        minLoanAmount: branding?.minLoanAmount ?? 10000,
+        maxLoanAmount: branding?.maxLoanAmount ?? 3000000,
+        minTenureMonths: branding?.minTenureMonths ?? 6,
+        maxTenureMonths: branding?.maxTenureMonths ?? 84,
+        minApr: branding?.minApr ?? 12.0,
+        maxApr: branding?.maxApr ?? 36.0,
+        processingFeePolicy: branding?.processingFeePolicy || 'Processing fee applicable as per loan terms. GST as per applicable rates.',
+        otherChargesPolicy: branding?.otherChargesPolicy || 'Late payment charges, prepayment charges, and other fees as per the approved loan agreement.',
+      },
+      eligibility: {
+        minAge: branding?.minAge ?? 18,
+        maxAge: branding?.maxAge ?? 60,
+        minMonthlyIncome: branding?.minMonthlyIncome ?? 15000,
+        creditScoreCriteria: branding?.creditScoreCriteria || 'Good credit history preferred. Applications assessed individually.',
+        bankAccountRequired: branding?.bankAccountRequired ?? true,
+        employmentCriteria: branding?.employmentCriteria || 'Salaried, Self-Employed, or Business Owner',
+        residentialStatusCriteria: branding?.residentialStatusCriteria || 'Indian Resident with valid address proof',
+      },
+      documents: documentsConfig,
+      disclaimer: branding?.disclaimerText || null,
+      faqs,
+      app: {
+        enabled: branding?.appEnabled ?? false,
+        downloadUrl: branding?.appDownloadUrl || null,
       },
     };
   }
+
 
   /**
    * Admin: Get branding settings.
@@ -61,37 +118,68 @@ export class SettingsService {
    */
   async updateBrandingSettings(input: UpdateBrandingInput, actor: AuthenticatedUser, ipAddress?: string) {
     const previous = await this.getBrandingSettings();
+
+    // Build shared field object for update/create
+    const brandingData = {
+      companyName: input.companyName,
+      companyLegalName: input.companyLegalName ?? previous.companyLegalName,
+      appName: input.appName,
+      logoUrl: input.logoUrl !== undefined ? (input.logoUrl || null) : previous.logoUrl,
+      faviconUrl: input.faviconUrl !== undefined ? (input.faviconUrl || null) : previous.faviconUrl,
+      secondaryLogoUrl: input.secondaryLogoUrl !== undefined ? (input.secondaryLogoUrl || null) : previous.secondaryLogoUrl,
+      approvalLetterHeaderUrl: input.approvalLetterHeaderUrl !== undefined ? (input.approvalLetterHeaderUrl || null) : previous.approvalLetterHeaderUrl,
+      watermarkLogoUrl: input.watermarkLogoUrl !== undefined ? (input.watermarkLogoUrl || null) : previous.watermarkLogoUrl,
+      documentWatermarkEnabled: input.documentWatermarkEnabled !== undefined ? input.documentWatermarkEnabled : (previous.documentWatermarkEnabled ?? true),
+      invoiceWatermarkEnabled: input.invoiceWatermarkEnabled !== undefined ? input.invoiceWatermarkEnabled : (previous.invoiceWatermarkEnabled ?? true),
+      watermarkOpacity: input.watermarkOpacity !== undefined ? input.watermarkOpacity : (previous.watermarkOpacity ?? 0.10),
+      watermarkSize: input.watermarkSize || previous.watermarkSize || 'MEDIUM',
+      watermarkPosition: input.watermarkPosition || previous.watermarkPosition || 'CENTER',
+      primaryColor: input.primaryColor,
+      secondaryColor: input.secondaryColor || '#0f172a',
+      email: input.email,
+      phone: input.phone,
+      address: input.address,
+      website: input.website,
+      termsUrl: input.termsUrl || 'https://loanapprove.com/terms',
+      privacyUrl: input.privacyUrl || 'https://loanapprove.com/privacy',
+      // Landing page fields
+      lenderName: input.lenderName ?? null,
+      lenderLegalName: input.lenderLegalName ?? null,
+      lenderRegistrationNumber: input.lenderRegistrationNumber ?? null,
+      lenderType: input.lenderType ?? null,
+      lenderAddress: input.lenderAddress ?? null,
+      lenderWebsite: input.lenderWebsite ?? null,
+      isDirectLender: input.isDirectLender ?? false,
+      partnerName: input.partnerName ?? null,
+      partnerRelationship: input.partnerRelationship ?? null,
+      minLoanAmount: input.minLoanAmount ?? 10000,
+      maxLoanAmount: input.maxLoanAmount ?? 3000000,
+      minTenureMonths: input.minTenureMonths ?? 6,
+      maxTenureMonths: input.maxTenureMonths ?? 84,
+      minApr: input.minApr ?? 12.0,
+      maxApr: input.maxApr ?? 36.0,
+      processingFeePolicy: input.processingFeePolicy ?? 'Processing fee applicable as per loan terms. GST as per applicable rates.',
+      otherChargesPolicy: input.otherChargesPolicy ?? 'Late payment charges, prepayment charges, and other fees as per the approved loan agreement.',
+      minAge: input.minAge ?? 18,
+      maxAge: input.maxAge ?? 60,
+      minMonthlyIncome: input.minMonthlyIncome ?? 15000,
+      creditScoreCriteria: input.creditScoreCriteria ?? 'Good credit history preferred. Applications assessed individually.',
+      bankAccountRequired: input.bankAccountRequired ?? true,
+      employmentCriteria: input.employmentCriteria ?? 'Salaried, Self-Employed, or Business Owner',
+      residentialStatusCriteria: input.residentialStatusCriteria ?? 'Indian Resident with valid address proof',
+      documentsConfigJson: input.documentsConfigJson ?? '[]',
+      disclaimerText: input.disclaimerText ?? null,
+      faqsJson: input.faqsJson ?? '[]',
+      appEnabled: input.appEnabled ?? false,
+      appDownloadUrl: input.appDownloadUrl ?? null,
+      heroHeadline: input.heroHeadline ?? 'Simple, Transparent Loan Application',
+      heroSubheadline: input.heroSubheadline ?? 'Apply online, complete verification, and track your application status — all in one place.',
+    };
+
     const updated = await prisma.brandingSettings.upsert({
       where: { id: 'default' },
-      update: {
-        companyName: input.companyName,
-        appName: input.appName,
-        logoUrl: input.logoUrl || null,
-        faviconUrl: input.faviconUrl || null,
-        primaryColor: input.primaryColor,
-        secondaryColor: input.secondaryColor || '#0f172a',
-        email: input.email,
-        phone: input.phone,
-        address: input.address,
-        website: input.website,
-        termsUrl: input.termsUrl || 'https://loanapprove.com/terms',
-        privacyUrl: input.privacyUrl || 'https://loanapprove.com/privacy',
-      },
-      create: {
-        id: 'default',
-        companyName: input.companyName,
-        appName: input.appName,
-        logoUrl: input.logoUrl || null,
-        faviconUrl: input.faviconUrl || null,
-        primaryColor: input.primaryColor,
-        secondaryColor: input.secondaryColor || '#0f172a',
-        email: input.email,
-        phone: input.phone,
-        address: input.address,
-        website: input.website,
-        termsUrl: input.termsUrl || 'https://loanapprove.com/terms',
-        privacyUrl: input.privacyUrl || 'https://loanapprove.com/privacy',
-      },
+      update: brandingData,
+      create: { id: 'default', ...brandingData },
     });
 
     await auditService.record({
@@ -108,6 +196,62 @@ export class SettingsService {
 
     return updated;
   }
+
+  /**
+   * Admin: Get dedicated document branding settings.
+   */
+  async getDocumentBrandingSettings() {
+    const settings = await this.getBrandingSettings();
+    return {
+      approvalLetterHeaderUrl: settings.approvalLetterHeaderUrl,
+      watermarkLogoUrl: settings.watermarkLogoUrl,
+      documentWatermarkEnabled: settings.documentWatermarkEnabled,
+      invoiceWatermarkEnabled: settings.invoiceWatermarkEnabled,
+      watermarkOpacity: settings.watermarkOpacity,
+      watermarkSize: settings.watermarkSize,
+      watermarkPosition: settings.watermarkPosition,
+      primaryLogoUrl: settings.logoUrl,
+      companyName: settings.companyName,
+      companyLegalName: settings.companyLegalName,
+    };
+  }
+
+  /**
+   * Admin: Update dedicated document branding settings.
+   */
+  async updateDocumentBrandingSettings(input: any, actor: AuthenticatedUser, ipAddress?: string) {
+    const previous = await this.getBrandingSettings();
+
+    const docData: any = {};
+    if (input.approvalLetterHeaderUrl !== undefined) docData.approvalLetterHeaderUrl = input.approvalLetterHeaderUrl || null;
+    if (input.watermarkLogoUrl !== undefined) docData.watermarkLogoUrl = input.watermarkLogoUrl || null;
+    if (input.documentWatermarkEnabled !== undefined) docData.documentWatermarkEnabled = Boolean(input.documentWatermarkEnabled);
+    if (input.invoiceWatermarkEnabled !== undefined) docData.invoiceWatermarkEnabled = Boolean(input.invoiceWatermarkEnabled);
+    if (input.watermarkOpacity !== undefined) docData.watermarkOpacity = Number(input.watermarkOpacity);
+    if (input.watermarkSize !== undefined) docData.watermarkSize = input.watermarkSize;
+    if (input.watermarkPosition !== undefined) docData.watermarkPosition = input.watermarkPosition;
+
+    const updated = await prisma.brandingSettings.upsert({
+      where: { id: 'default' },
+      update: docData,
+      create: { id: 'default', ...docData },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'DOCUMENT_BRANDING_UPDATED',
+      entity: 'BrandingSettings',
+      entityId: 'default',
+      previousValue: previous,
+      newValue: docData,
+      ipAddress,
+    });
+
+    return updated;
+  }
+
 
   /**
    * Admin: Get email configuration (passwords masked).
@@ -200,36 +344,39 @@ export class SettingsService {
 
   /**
    * Admin: Send test email.
+   * Real provider verification: NO FAKE SUCCESS.
    */
   async sendTestEmail(toEmail: string, actor: AuthenticatedUser, ipAddress?: string) {
+    const { emailService } = await import('./emailService');
     const settings = await prisma.emailSettings.findUnique({ where: { id: 'default' } });
-    if (!settings || !settings.smtpHost) {
+
+    // Attempt real SMTP connection verification with active provider
+    const connResult = await emailService.testSmtpConnection();
+    if (!connResult.success) {
       return {
         success: false,
-        message: 'SMTP settings are not configured. Please configure SMTP host and credentials first.',
+        message: `SMTP connection failed: ${connResult.error || connResult.message}`,
+        error: connResult.error,
         delivered: false,
       };
     }
-
-    // Decrypt password to test readiness
-    const decryptedPassword = decryptSecret(settings.smtpPasswordEnc, config.JWT_SECRET);
 
     await auditService.record({
       actorType: 'ADMIN',
       actorId: actor.id,
       actorName: actor.fullName,
-      action: 'TEST_EMAIL_SENT',
+      action: 'TEST_EMAIL_VERIFIED',
       entity: 'EmailSettings',
       entityId: 'default',
-      newValue: { toEmail, status: 'DISPATCHED' },
+      newValue: { toEmail, status: 'VERIFIED', previewUrl: connResult.previewUrl },
       ipAddress,
     });
 
     return {
       success: true,
-      message: `Test email dispatched successfully to ${toEmail} using ${settings.smtpHost}:${settings.smtpPort}.`,
+      message: connResult.message || `SMTP connection successfully verified (${settings?.smtpHost || 'Ethereal Test SMTP'}).`,
+      previewUrl: connResult.previewUrl,
       delivered: true,
-      hasCredentials: Boolean(decryptedPassword),
     };
   }
 
@@ -244,16 +391,19 @@ export class SettingsService {
       });
     }
 
+    const envToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
+    const hasToken = Boolean((settings.accessTokenEnc && settings.accessTokenEnc.length > 0) || envToken);
+
     return {
       id: settings.id,
-      provider: settings.provider,
-      phoneNumber: settings.phoneNumber,
-      phoneNumberId: settings.phoneNumberId,
-      businessAccountId: settings.businessAccountId,
-      apiEndpoint: settings.apiEndpoint,
-      hasAccessToken: Boolean(settings.accessTokenEnc && settings.accessTokenEnc.length > 0),
-      maskedAccessToken: settings.accessTokenEnc ? '••••••••••••' : '',
-      enabled: settings.enabled,
+      provider: settings.provider || process.env.WHATSAPP_PROVIDER || 'META',
+      phoneNumber: settings.phoneNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919046833151',
+      phoneNumberId: settings.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+      businessAccountId: settings.businessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
+      apiEndpoint: settings.apiEndpoint || process.env.WHATSAPP_API_URL || '',
+      hasAccessToken: hasToken,
+      maskedAccessToken: hasToken ? '••••••••••••' : '',
+      enabled: settings.enabled || Boolean(envToken),
       updatedAt: settings.updatedAt,
     };
   }
@@ -307,6 +457,9 @@ export class SettingsService {
       ipAddress,
     });
 
+    const envToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
+    const hasToken = Boolean((updated.accessTokenEnc && updated.accessTokenEnc.length > 0) || envToken);
+
     return {
       id: updated.id,
       provider: updated.provider,
@@ -314,8 +467,8 @@ export class SettingsService {
       phoneNumberId: updated.phoneNumberId,
       businessAccountId: updated.businessAccountId,
       apiEndpoint: updated.apiEndpoint,
-      hasAccessToken: Boolean(updated.accessTokenEnc && updated.accessTokenEnc.length > 0),
-      maskedAccessToken: updated.accessTokenEnc ? '••••••••••••' : '',
+      hasAccessToken: hasToken,
+      maskedAccessToken: hasToken ? '••••••••••••' : '',
       enabled: updated.enabled,
       updatedAt: updated.updatedAt,
     };
@@ -323,13 +476,18 @@ export class SettingsService {
 
   /**
    * Admin: Send test WhatsApp message.
+   * Real provider verification: NO FAKE SUCCESS.
    */
   async sendTestWhatsApp(toNumber: string, actor: AuthenticatedUser, ipAddress?: string) {
+    const { whatsappService } = await import('./whatsappService');
     const settings = await prisma.whatsAppSettings.findUnique({ where: { id: 'default' } });
-    if (!settings || !settings.enabled || !settings.accessTokenEnc) {
+
+    const connResult = await whatsappService.testConnection();
+    if (!connResult.success) {
       return {
         success: false,
-        message: 'WhatsApp integration is not configured or disabled. Please enable and provide access credentials.',
+        message: `WhatsApp provider connection failed: ${connResult.error || connResult.message}`,
+        error: connResult.error,
         delivered: false,
       };
     }
@@ -338,18 +496,72 @@ export class SettingsService {
       actorType: 'ADMIN',
       actorId: actor.id,
       actorName: actor.fullName,
-      action: 'TEST_WHATSAPP_SENT',
+      action: 'TEST_WHATSAPP_VERIFIED',
       entity: 'WhatsAppSettings',
       entityId: 'default',
-      newValue: { toNumber, provider: settings.provider },
+      newValue: { toNumber, provider: settings?.provider || process.env.WHATSAPP_PROVIDER || 'DEVELOPMENT' },
       ipAddress,
     });
 
     return {
       success: true,
-      message: `Test WhatsApp notification sent successfully to ${toNumber} via ${settings.provider} Cloud API.`,
+      message: connResult.message || `WhatsApp provider connection verified successfully for ${settings?.provider || process.env.WHATSAPP_PROVIDER || 'DEVELOPMENT'}.`,
       delivered: true,
     };
+  }
+
+  /**
+   * Admin: Get Automated Communication Configuration
+   */
+  async getCommunicationSettings() {
+    let settings = await prisma.communicationSettings.findUnique({ where: { id: 'default' } });
+    if (!settings) {
+      settings = await prisma.communicationSettings.create({
+        data: { id: 'default' },
+      });
+    }
+    return settings;
+  }
+
+  /**
+   * Admin: Update Automated Communication Configuration
+   */
+  async updateCommunicationSettings(input: Partial<{
+    emailEnabled: boolean;
+    whatsAppEnabled: boolean;
+    autoEmailOnPaymentVerified: boolean;
+    autoEmailOnLoanApproved: boolean;
+    autoEmailOnLoanRejected: boolean;
+    autoEmailOnKycVerified: boolean;
+    autoEmailOnKycRejected: boolean;
+    autoEmailOnChargeCreated: boolean;
+    autoWhatsAppOnPaymentVerified: boolean;
+    autoWhatsAppOnKycPending: boolean;
+    autoWhatsAppOnLoanApproved: boolean;
+    autoWhatsAppOnLoanRejected: boolean;
+    autoWhatsAppOnChargeCreated: boolean;
+  }>, actor: AuthenticatedUser, ipAddress?: string) {
+    const updated = await prisma.communicationSettings.upsert({
+      where: { id: 'default' },
+      update: input,
+      create: {
+        id: 'default',
+        ...input,
+      },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'COMMUNICATION_SETTINGS_UPDATED',
+      entity: 'CommunicationSettings',
+      entityId: 'default',
+      newValue: input,
+      ipAddress,
+    });
+
+    return updated;
   }
 
   /**

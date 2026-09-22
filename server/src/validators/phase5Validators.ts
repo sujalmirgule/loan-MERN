@@ -4,8 +4,17 @@ import { z } from 'zod';
 export const updateBrandingSchema = z.object({
   companyName: z.string().trim().min(2, 'Company name must be at least 2 characters').max(100),
   appName: z.string().trim().min(2, 'App name must be at least 2 characters').max(50),
-  logoUrl: z.string().trim().url('Must be a valid URL').or(z.literal('')).nullable().optional(),
-  faviconUrl: z.string().trim().url('Must be a valid URL').or(z.literal('')).nullable().optional(),
+  companyLegalName: z.string().trim().min(2, 'Company legal name must be at least 2 characters').max(200).optional(),
+  logoUrl: z.string().trim().nullable().optional(),
+  faviconUrl: z.string().trim().nullable().optional(),
+  secondaryLogoUrl: z.string().trim().nullable().optional(),
+  approvalLetterHeaderUrl: z.string().trim().nullable().optional(),
+  watermarkLogoUrl: z.string().trim().nullable().optional(),
+  documentWatermarkEnabled: z.boolean().optional(),
+  invoiceWatermarkEnabled: z.boolean().optional(),
+  watermarkOpacity: z.coerce.number().min(0).max(1).default(0.10).optional(),
+  watermarkSize: z.enum(['SMALL', 'MEDIUM', 'LARGE']).default('MEDIUM').optional(),
+  watermarkPosition: z.enum(['CENTER', 'TOP', 'BOTTOM']).default('CENTER').optional(),
   primaryColor: z.string().trim().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Must be a valid hex color code (e.g. #047857)'),
   secondaryColor: z.string().trim().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Must be a valid hex color code').optional(),
   email: z.string().trim().email('Must be a valid email address'),
@@ -14,9 +23,70 @@ export const updateBrandingSchema = z.object({
   website: z.string().trim().url('Must be a valid website URL'),
   termsUrl: z.string().trim().url('Must be a valid Terms URL').optional(),
   privacyUrl: z.string().trim().url('Must be a valid Privacy URL').optional(),
+
+  // Landing page — Lender/Partner Disclosure
+  lenderName: z.string().trim().max(200).optional().nullable(),
+  lenderLegalName: z.string().trim().max(300).optional().nullable(),
+  lenderRegistrationNumber: z.string().trim().max(100).optional().nullable(),
+  lenderType: z.string().trim().max(100).optional().nullable(),
+  lenderAddress: z.string().trim().max(500).optional().nullable(),
+  lenderWebsite: z.string().trim().url().or(z.literal('')).optional().nullable(),
+  isDirectLender: z.boolean().optional(),
+  partnerName: z.string().trim().max(200).optional().nullable(),
+  partnerRelationship: z.string().trim().max(300).optional().nullable(),
+
+  // Landing page — Loan Financial Parameters
+  minLoanAmount: z.coerce.number().positive().optional(),
+  maxLoanAmount: z.coerce.number().positive().optional(),
+  minTenureMonths: z.coerce.number().int().positive().optional(),
+  maxTenureMonths: z.coerce.number().int().positive().optional(),
+  minApr: z.coerce.number().nonnegative().optional(),
+  maxApr: z.coerce.number().nonnegative().optional(),
+  processingFeePolicy: z.string().trim().max(1000).optional(),
+  otherChargesPolicy: z.string().trim().max(1000).optional(),
+
+  // Landing page — Eligibility
+  minAge: z.coerce.number().int().positive().optional(),
+  maxAge: z.coerce.number().int().positive().optional(),
+  minMonthlyIncome: z.coerce.number().nonnegative().optional(),
+  creditScoreCriteria: z.string().trim().max(500).optional(),
+  bankAccountRequired: z.boolean().optional(),
+  employmentCriteria: z.string().trim().max(500).optional(),
+  residentialStatusCriteria: z.string().trim().max(500).optional(),
+
+  // Landing page — Document Checklist (JSON string)
+  documentsConfigJson: z.string().optional(),
+
+  // Landing page — Disclaimer
+  disclaimerText: z.string().trim().max(5000).optional().nullable(),
+
+  // Landing page — FAQs (JSON string)
+  faqsJson: z.string().optional(),
+
+  // Mobile App CTA
+  appEnabled: z.boolean().optional(),
+  appDownloadUrl: z.string().trim().url().or(z.literal('')).optional().nullable(),
+
+  // Hero content
+  heroHeadline: z.string().trim().max(200).optional(),
+  heroSubheadline: z.string().trim().max(500).optional(),
 });
 
 export type UpdateBrandingInput = z.infer<typeof updateBrandingSchema>;
+ 
+// --- Dedicated Document Branding Schema ---
+export const updateDocumentBrandingSchema = z.object({
+  approvalLetterHeaderUrl: z.string().trim().nullable().optional(),
+  watermarkLogoUrl: z.string().trim().nullable().optional(),
+  documentWatermarkEnabled: z.boolean().optional(),
+  invoiceWatermarkEnabled: z.boolean().optional(),
+  watermarkOpacity: z.coerce.number().min(0.05).max(0.30).default(0.10).optional(),
+  watermarkSize: z.enum(['SMALL', 'MEDIUM', 'LARGE']).default('MEDIUM').optional(),
+  watermarkPosition: z.enum(['CENTER', 'TOP', 'BOTTOM']).default('CENTER').optional(),
+});
+
+export type UpdateDocumentBrandingInput = z.infer<typeof updateDocumentBrandingSchema>;
+
 
 // --- Email Settings Schema ---
 export const updateEmailSettingsSchema = z.object({
@@ -74,6 +144,7 @@ export const submitUtrSchema = z.object({
     .max(50, 'UTR reference cannot exceed 50 characters')
     .regex(/^[a-zA-Z0-9_-]+$/, 'UTR reference must contain only alphanumeric characters, dashes or underscores'),
   paymentMethod: z.enum(['UPI', 'NET_BANKING', 'DEBIT_CARD']).default('UPI'),
+  paymentType: z.enum(['PROCESSING_FEE', 'KYC_CHARGES']).default('PROCESSING_FEE').optional(),
   notes: z.string().trim().max(300).optional(),
 });
 

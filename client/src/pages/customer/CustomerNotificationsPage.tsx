@@ -14,6 +14,7 @@ import {
   CreditCard,
   CheckCircle2,
 } from 'lucide-react';
+import { useBrandTitle } from '@/hooks/useBrandTitle';
 
 interface NotificationItem {
   id: string;
@@ -25,6 +26,7 @@ interface NotificationItem {
 }
 
 export const CustomerNotificationsPage: React.FC = () => {
+  useBrandTitle('Notifications');
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<{ data: NotificationItem[]; unreadCount: number }>({
@@ -124,11 +126,11 @@ export const CustomerNotificationsPage: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <h2 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">{notif.title}</h2>
                     {!notif.isRead && (
-                      <Badge className="bg-emerald-600 text-white text-[10px] h-4 shrink-0">New</Badge>
+                      <Badge className="bg-success text-background text-text-primary text-[10px] h-4 shrink-0">New</Badge>
                     )}
                   </div>
                   <p className="text-xs text-slate-600 mt-1 leading-relaxed">{notif.message}</p>
-                  <div className="flex items-center space-x-1.5 text-[10px] text-slate-400 mt-2">
+                  <div className="flex items-center space-x-1.5 text-[10px] text-text-secondary mt-2">
                     <Clock className="w-3 h-3" />
                     <span>
                       {new Date(notif.createdAt).toLocaleDateString('en-IN', {
@@ -147,9 +149,9 @@ export const CustomerNotificationsPage: React.FC = () => {
         </div>
       ) : (
         <Card className="border-slate-200 p-8 text-center">
-          <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <AlertCircle className="w-8 h-8 text-text-secondary mx-auto mb-2" />
           <h2 className="text-sm font-semibold text-slate-700">No Notifications Yet</h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-text-secondary mt-1">
             As your loan application progresses through review, updates will appear here in real-time.
           </p>
         </Card>

@@ -1,34 +1,42 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/api/client';
-import { API_ENDPOINTS } from '@/api/endpoints';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { adminService } from '@/services/adminService';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import {
   CreditCard,
   Search,
-  CheckCircle2,
-  XCircle,
   AlertCircle,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  Loader2,
 } from 'lucide-react';
 
 interface PaymentItem {
   id: string;
-  loanId: string;
-  applicationNumber: string;
+  loanId?: string;
+  applicationNumber?: string;
   customerId: string;
   customerName: string;
   mobile: string;
-  email: string;
+  email?: string;
+  chargeType?: string;
   amount: number;
   utr: string;
-  receiptNumber: string;
+  receiptNumber?: string;
   paymentMethod: string;
   status: string;
   rejectionReason?: string;
@@ -38,426 +46,501 @@ interface PaymentItem {
   verifiedBy?: string;
 }
 
-interface PaymentsResponse {
-  data: PaymentItem[];
-  pagination: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
-}
-
 export const AdminPaymentsPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const getInitialStatus = () => {
+    const s = searchParams.get('status');
+    if (!s) return 'ALL';
+    if (s === 'PENDING' || s === 'UNDER_VERIFICATION') return 'PENDING';
+    if (s === 'SUCCESS' || s === 'PAID') return 'PAID';
+    if (s === 'REJECTED') return 'REJECTED';
+    if (s === 'ALL') return 'ALL';
+    return s;
+  };
 
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState(getInitialStatus);
   const [search, setSearch] = useState('');
 
-  // Selected payment for verify/reject dialog
-  const [selectedPayment, setSelectedPayment] = useState<PaymentItem | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [dialogMode, setDialogMode] = useState<'VERIFY' | 'REJECT' | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  React.useEffect(() => {
+    const s = searchParams.get('status');
+    if (s === 'PENDING' || s === 'UNDER_VERIFICATION') setStatusFilter('PENDING');
+    else if (s === 'SUCCESS' || s === 'PAID') setStatusFilter('PAID');
+    else if (s === 'REJECTED') setStatusFilter('REJECTED');
+    else if (s === 'ALL') setStatusFilter('ALL');
+  }, [searchParams]);
 
-  const { data, isLoading, refetch } = useQuery<PaymentsResponse>({
+  // Selected payment for verification/view modal
+  const [activePayment, setActivePayment] = useState<PaymentItem | null>(null);
+  const [modalMode, setModalMode] = useState<'VERIFY' | 'REJECT' | 'VIEW' | null>(null);
+  const [adminNotes, setAdminNotes] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['admin-payments', page, statusFilter, search],
     queryFn: async () => {
-      const res = await apiClient.get(API_ENDPOINTS.PAYMENTS.ADMIN_LIST, {
-        params: {
-          page,
-          limit: 10,
-          status: statusFilter !== 'ALL' ? statusFilter : undefined,
-          search: search.trim() || undefined,
-        },
+      let mappedStatus: string | undefined = undefined;
+      if (statusFilter === 'PENDING') mappedStatus = 'UNDER_VERIFICATION';
+      else if (statusFilter === 'PAID') mappedStatus = 'PAID';
+      else if (statusFilter === 'REJECTED') mappedStatus = 'REJECTED';
+
+      const res = await adminService.getAllPayments({
+        page,
+        limit: 15,
+        status: mappedStatus,
+        search: search.trim() || undefined,
       });
       return res;
     },
+    refetchInterval: 1500,
   });
 
   const verifyMutation = useMutation({
-    mutationFn: async (paymentId: string) => {
-      return apiClient.post(API_ENDPOINTS.PAYMENTS.VERIFY(paymentId));
+    mutationFn: async (id: string) => {
+      return adminService.verifyPayment(id, adminNotes);
     },
     onSuccess: () => {
-      setDialogMode(null);
-      setSelectedPayment(null);
-      setErrorMessage(null);
+      setModalMode(null);
+      setActivePayment(null);
+      setAdminNotes('');
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
     },
-    onError: (err: Error) => {
-      setErrorMessage(err.message || 'Failed to verify payment.');
+    onError: (err: any) => {
+      setActionError(err?.message || 'Failed to verify payment.');
     },
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async ({ paymentId, reason }: { paymentId: string; reason: string }) => {
-      return apiClient.post(API_ENDPOINTS.PAYMENTS.REJECT(paymentId), {
-        rejectionReason: reason,
-      });
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      return adminService.rejectPayment(id, reason);
     },
     onSuccess: () => {
-      setDialogMode(null);
-      setSelectedPayment(null);
+      setModalMode(null);
+      setActivePayment(null);
       setRejectReason('');
-      setErrorMessage(null);
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
     },
-    onError: (err: Error) => {
-      setErrorMessage(err.message || 'Failed to reject payment.');
+    onError: (err: any) => {
+      setActionError(err?.message || 'Failed to reject payment.');
     },
   });
 
-  const payments = data?.data || [];
-  const pagination = data?.pagination || { total: 0, page: 1, limit: 10, totalPages: 1 };
+  const payments: PaymentItem[] = data?.data || [];
+  const pagination = data?.pagination || { total: 0, page: 1, limit: 15, totalPages: 1 };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'PAID':
-        return <Badge className="bg-emerald-600 text-white text-[10px]">PAID ✓</Badge>;
+      case 'SUCCESS':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-success/15 text-success border border-success/30">
+            PAID
+          </span>
+        );
       case 'UNDER_VERIFICATION':
-        return <Badge className="bg-amber-600 text-white text-[10px] animate-pulse">Under Verification</Badge>;
+      case 'PENDING':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-warning/15 text-warning border border-warning/30">
+            PENDING
+          </span>
+        );
       case 'REJECTED':
-        return <Badge className="bg-red-600 text-white text-[10px]">Rejected</Badge>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-danger/15 text-danger border border-danger/30">
+            REJECTED
+          </span>
+        );
       default:
-        return <Badge variant="secondary" className="text-[10px]">{status}</Badge>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#1D3047] text-text-secondary">
+            {status}
+          </span>
+        );
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
+      {/* Breadcrumb */}
+      <div className="flex items-center space-x-2 text-xs text-text-secondary">
+        <Link to="/admin/dashboard" className="hover:text-text-primary transition-colors">Dashboard</Link>
+        <span>›</span>
+        <span className="text-text-primary font-semibold">Payments</span>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center space-x-2">
-            <CreditCard className="w-6 h-6 text-emerald-600" />
-            <span>Verification Payments & UTR Queue</span>
+          <h1 className="text-2xl font-extrabold text-text-primary tracking-tight flex items-center gap-2">
+            <CreditCard className="w-6 h-6 text-success" />
+            <span>Payments & UTR Verification</span>
           </h1>
-          <p className="text-xs sm:text-sm text-slate-600">
-            Inspect borrower UTR references and execute automated loan approval transitions.
+          <p className="text-xs text-text-secondary mt-0.5">
+            Audit customer fee submissions and verify bank UTR references. Payment confirmation is decoupled from loan approval.
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => refetch()} className="text-xs h-8">
-          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-          Refresh Queue
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="bg-surface-elevated border-border text-text-primary hover:bg-surface-elevated hover:brightness-110 text-xs h-9"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
         </Button>
       </div>
 
-      {/* Filter Tabs & Search */}
-      <Card className="shadow-sm border-slate-200">
-        <CardHeader className="pb-3 border-b border-slate-100">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center space-x-1.5 overflow-x-auto text-xs font-medium">
-              {[
-                { key: 'ALL', label: 'All Transactions' },
-                { key: 'UNDER_VERIFICATION', label: 'Pending Verification' },
-                { key: 'PAID', label: 'Verified & Paid' },
-                { key: 'REJECTED', label: 'Rejected' },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => {
-                    setStatusFilter(tab.key);
-                    setPage(1);
-                  }}
-                  className={`py-1.5 px-3 rounded-md transition-colors ${
-                    statusFilter === tab.key
-                      ? 'bg-emerald-600 text-white font-semibold'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
-              <Input
-                placeholder="Search UTR, name, mobile, app no..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
+      {/* Filter Tabs & Search Bar */}
+      <Card className="bg-surface-elevated border border-border shadow-sm">
+        <div className="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center space-x-1.5 overflow-x-auto text-xs font-medium">
+            {[
+              { key: 'PENDING', label: 'Pending Verification' },
+              { key: 'PAID', label: 'Verified Payments' },
+              { key: 'REJECTED', label: 'Rejected' },
+              { key: 'ALL', label: 'All Payments' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setStatusFilter(tab.key);
                   setPage(1);
+                  setSearchParams({ status: tab.key });
                 }}
-                className="text-xs h-8 pl-8 w-56 sm:w-64"
-              />
-            </div>
+                className={`py-1.5 px-3 rounded-lg transition-colors whitespace-nowrap ${
+                  statusFilter === tab.key
+                    ? 'bg-primary text-text-primary font-semibold shadow-sm'
+                    : 'bg-surface text-text-secondary hover:text-text-primary hover:bg-surface-elevated hover:brightness-110'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        </CardHeader>
 
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+            <Input
+              placeholder="Search Customer, UTR, App ID..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="bg-surface border-border text-text-primary text-xs h-8.5 pl-8 rounded-lg placeholder-[#8FA3BA]/60"
+            />
+          </div>
+        </div>
+
+        {/* Data Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-text-secondary">
+            <thead className="bg-surface text-text-secondary uppercase tracking-wider text-[10px] font-bold border-b border-border">
               <tr>
-                <th className="py-3 px-4">Borrower Details</th>
-                <th className="py-3 px-4">Application ID</th>
-                <th className="py-3 px-4">Amount</th>
-                <th className="py-3 px-4">UTR Reference</th>
-                <th className="py-3 px-4">Method</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Submitted Date</th>
-                <th className="py-3 px-4">Verified By</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+                <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Application</th>
+                <th className="px-4 py-3">Charge</th>
+                <th className="px-4 py-3">Amount</th>
+                <th className="px-4 py-3">UTR</th>
+                <th className="px-4 py-3">Submitted Date</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[#1D3047]/60">
               {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td colSpan={9} className="py-3 px-4 h-10 bg-slate-50" />
-                  </tr>
-                ))
-              ) : payments.length > 0 ? (
-                payments.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-900">{p.customerName}</div>
-                      <div className="text-[11px] font-mono text-slate-500">+91 {p.mobile}</div>
-                    </td>
-                    <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                      <Link to={`/admin/loans/${p.loanId}`} className="hover:underline text-primary">
-                        {p.applicationNumber}
-                      </Link>
-                    </td>
-                    <td className="py-3 px-4 font-bold text-slate-900">₹{p.amount}</td>
-                    <td className="py-3 px-4">
-                      <span className="font-mono font-semibold text-emerald-950 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        {p.utr}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">{p.paymentMethod}</td>
-                    <td className="py-3 px-4">{getStatusBadge(p.status)}</td>
-                    <td className="py-3 px-4 text-slate-500">
-                      {new Date(p.submittedAt).toLocaleDateString('en-IN', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </td>
-                    <td className="py-3 px-4 text-slate-600">{p.verifiedBy || '—'}</td>
-                    <td className="py-3 px-4 text-right">
-                      {p.status === 'UNDER_VERIFICATION' && (
-                        <div className="flex items-center justify-end space-x-1.5">
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              setSelectedPayment(p);
-                              setDialogMode('VERIFY');
-                              setErrorMessage(null);
-                            }}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-2"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                            Verify Payment
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => {
-                              setSelectedPayment(p);
-                              setDialogMode('REJECT');
-                              setRejectReason('');
-                              setErrorMessage(null);
-                            }}
-                            className="text-xs h-7 px-2"
-                          >
-                            <XCircle className="w-3.5 h-3.5 mr-1" />
-                            Reject
-                          </Button>
-                        </div>
-                      )}
-                      {p.status === 'PAID' && (
-                        <span className="text-[11px] text-emerald-700 font-medium">Approved & Executed</span>
-                      )}
-                      {p.status === 'REJECTED' && (
-                        <span className="text-[11px] text-red-600 truncate max-w-xs block" title={p.rejectionReason}>
-                          {p.rejectionReason}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              ) : (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
-                    No payment submissions match the selected filters.
+                  <td colSpan={8} className="px-4 py-12 text-center text-xs text-text-secondary">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
+                    Loading payments queue...
                   </td>
                 </tr>
+              ) : payments.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-xs text-text-secondary">
+                    No payments found matching criteria.
+                  </td>
+                </tr>
+              ) : (
+                payments.map((p) => (
+                  <tr key={p.id} className="hover:bg-surface-elevated hover:brightness-110/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div>
+                        <p className="font-semibold text-text-primary">{p.customerName || 'Borrower'}</p>
+                        <p className="text-[11px] text-text-secondary font-mono">{p.mobile}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-text-primary">
+                      {p.loanId ? (
+                        <Link to={`/admin/loans/${p.loanId}`} className="hover:text-primary transition-colors">
+                          {p.applicationNumber || p.loanId.slice(0, 8)}
+                        </Link>
+                      ) : (
+                        p.applicationNumber || '—'
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-text-primary">
+                      {p.chargeType ? p.chargeType.replace(/_/g, ' ') : 'Processing Fee'}
+                    </td>
+                    <td className="px-4 py-3 font-mono font-bold text-success">
+                      ₹{(p.amount || 0).toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-4 py-3 font-mono font-semibold text-text-primary">
+                      {p.utr || <span className="text-text-secondary italic">Not provided</span>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {p.submittedAt
+                        ? new Date(p.submittedAt).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3">{getStatusBadge(p.status)}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setActivePayment(p);
+                            setModalMode('VIEW');
+                          }}
+                          className="h-7 px-2 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1" />
+                          View
+                        </Button>
+
+                        {p.status === 'UNDER_VERIFICATION' && (
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setActivePayment(p);
+                                setModalMode('VERIFY');
+                                setActionError(null);
+                              }}
+                              className="h-7 px-2.5 text-xs bg-success/15 text-success hover:bg-success hover:text-[#07111F] border border-success/30 font-semibold"
+                            >
+                              Verify
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setActivePayment(p);
+                                setModalMode('REJECT');
+                                setActionError(null);
+                              }}
+                              className="h-7 px-2.5 text-xs bg-danger/15 text-danger hover:bg-[#FF5C70] hover:text-text-primary border border-danger/30 font-semibold"
+                            >
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
-        </CardContent>
+        </div>
 
         {/* Pagination Footer */}
         {pagination.totalPages > 1 && (
-          <div className="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <div className="p-4 border-t border-border flex items-center justify-between text-xs text-text-secondary">
             <span>
-              Page {pagination.page} of {pagination.totalPages} ({pagination.total} records)
+              Showing Page <strong className="text-text-primary">{pagination.page}</strong> of{' '}
+              <strong className="text-text-primary">{pagination.totalPages}</strong> ({pagination.total} total)
             </span>
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 disabled={page <= 1}
                 onClick={() => setPage(page - 1)}
-                className="h-7 px-2"
+                className="bg-surface border-border text-text-secondary hover:text-text-primary text-xs h-8"
               >
-                <ChevronLeft className="w-3.5 h-3.5" />
+                <ChevronLeft className="w-3.5 h-3.5 mr-1" /> Prev
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 disabled={page >= pagination.totalPages}
                 onClick={() => setPage(page + 1)}
-                className="h-7 px-2"
+                className="bg-surface border-border text-text-secondary hover:text-text-primary text-xs h-8"
               >
-                <ChevronRight className="w-3.5 h-3.5" />
+                Next <ChevronRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </div>
           </div>
         )}
       </Card>
 
-      {/* Verification Confirmation Modal */}
-      {dialogMode === 'VERIFY' && selectedPayment && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card className="max-w-md w-full shadow-lg border-emerald-300">
-            <CardHeader className="pb-3 bg-emerald-50/50 border-b border-emerald-100">
-              <CardTitle className="text-base flex items-center space-x-2 text-emerald-950">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <span>Verify Payment & Auto-Approve Loan</span>
-              </CardTitle>
-              <CardDescription>
-                Confirm incoming verification deposit of ₹{selectedPayment.amount} for UTR{' '}
-                <strong className="font-mono">{selectedPayment.utr}</strong>.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 space-y-3 text-xs">
-              {errorMessage && (
-                <div className="p-2.5 rounded bg-red-50 border border-red-200 text-red-800 flex items-center space-x-1.5">
-                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
+      {/* ── Verification / Details Modal ───────────────────────────────────── */}
+      {activePayment && (
+        <Dialog
+          open={!!modalMode}
+          onOpenChange={(open) => {
+            if (!open) {
+              setModalMode(null);
+              setActivePayment(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-md bg-surface-elevated border-border text-text-primary">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-text-primary flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-success" />
+                Payment Verification Record
+              </DialogTitle>
+              <DialogDescription className="text-xs text-text-secondary">
+                Confirm UTR settlement in merchant bank account
+              </DialogDescription>
+            </DialogHeader>
 
-              <div className="p-3 bg-slate-50 rounded-lg space-y-1.5 border border-slate-200">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Borrower:</span>
-                  <span className="font-semibold text-slate-900">{selectedPayment.customerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Mobile:</span>
-                  <span className="font-mono font-medium text-slate-900">+91 {selectedPayment.mobile}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Application Number:</span>
-                  <span className="font-mono font-bold text-slate-900">{selectedPayment.applicationNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">UTR / Ref:</span>
-                  <span className="font-mono font-bold text-emerald-800">{selectedPayment.utr}</span>
-                </div>
+            {actionError && (
+              <div className="p-3 bg-danger/10 border border-danger/30 rounded-lg text-xs text-danger flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{actionError}</span>
               </div>
+            )}
 
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded text-blue-900 text-[11px] leading-relaxed">
-                <strong>Automated Business Operation:</strong> Verifying this payment will atomically transition the loan
-                to <strong>APPROVED</strong>, generate the <strong>Master Loan Agreement</strong>, construct the{' '}
-                <strong>EMI Schedule</strong>, check the <strong>One Approved Loan Policy</strong>, and notify the borrower.
+            {/* Structured Payment Info Display */}
+            <div className="p-3.5 rounded-lg bg-surface border border-border space-y-2.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Customer:</span>
+                <span className="font-semibold text-text-primary">{activePayment.customerName}</span>
               </div>
-
-              <div className="flex justify-end space-x-2 pt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDialogMode(null)}
-                  disabled={verifyMutation.isPending}
-                  className="text-xs h-8"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => verifyMutation.mutate(selectedPayment.id)}
-                  disabled={verifyMutation.isPending}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3"
-                >
-                  {verifyMutation.isPending ? 'Verifying & Approving...' : 'Confirm Verification & Auto-Approve'}
-                </Button>
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Application:</span>
+                <span className="font-mono text-text-primary">{activePayment.applicationNumber || '—'}</span>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Charge:</span>
+                <span className="text-text-primary">
+                  {activePayment.chargeType ? activePayment.chargeType.replace(/_/g, ' ') : 'Processing Fee'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Amount:</span>
+                <span className="font-mono font-bold text-success text-sm">
+                  ₹{(activePayment.amount || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-secondary">UTR:</span>
+                <span className="font-mono font-bold text-text-primary bg-surface-elevated px-2 py-0.5 rounded border border-border">
+                  {activePayment.utr || 'None'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-secondary">Payment Date:</span>
+                <span className="text-text-primary">
+                  {activePayment.submittedAt ? new Date(activePayment.submittedAt).toLocaleString('en-IN') : '—'}
+                </span>
+              </div>
+            </div>
 
-      {/* Rejection Modal */}
-      {dialogMode === 'REJECT' && selectedPayment && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card className="max-w-md w-full shadow-lg border-red-300">
-            <CardHeader className="pb-3 bg-red-50/50 border-b border-red-100">
-              <CardTitle className="text-base flex items-center space-x-2 text-red-950">
-                <XCircle className="w-5 h-5 text-red-600" />
-                <span>Reject Payment Reference</span>
-              </CardTitle>
-              <CardDescription>
-                State mandatory business reason for rejecting UTR <strong className="font-mono">{selectedPayment.utr}</strong>.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 space-y-3 text-xs">
-              {errorMessage && (
-                <div className="p-2.5 rounded bg-red-50 border border-red-200 text-red-800 flex items-center space-x-1.5">
-                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">
-                  Mandatory Rejection Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="e.g. Transaction reference not found in bank statement, amount mismatch..."
+            {/* Rejection Input */}
+            {modalMode === 'REJECT' && (
+              <div className="space-y-1.5 text-xs pt-2">
+                <Label className="text-danger">Rejection Reason *</Label>
+                <Input
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
-                  className="w-full text-xs p-2 rounded border border-input bg-background"
-                  required
+                  placeholder="e.g. UTR not found in bank statement, amount mismatch"
+                  className="bg-surface border-border text-text-primary text-xs mt-1"
                 />
               </div>
+            )}
 
-              <div className="flex justify-end space-x-2 pt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDialogMode(null)}
-                  disabled={rejectMutation.isPending}
-                  className="text-xs h-8"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() =>
-                    rejectMutation.mutate({
-                      paymentId: selectedPayment.id,
-                      reason: rejectReason.trim(),
-                    })
-                  }
-                  disabled={rejectMutation.isPending || !rejectReason.trim()}
-                  className="text-xs h-8 px-3"
-                >
-                  {rejectMutation.isPending ? 'Rejecting...' : 'Reject Payment Reference'}
-                </Button>
+            {/* Verification Note */}
+            {modalMode === 'VERIFY' && (
+              <div className="space-y-1.5 text-xs pt-2">
+                <Label className="text-text-secondary">Internal Verification Note (Optional)</Label>
+                <Input
+                  value={adminNotes}
+                  onChange={(e) => setAdminNotes(e.target.value)}
+                  placeholder="e.g. Verified against ICICI statement"
+                  className="bg-surface border-border text-text-primary text-xs mt-1"
+                />
+                <p className="text-[11px] text-text-secondary italic mt-1">
+                  Note: Verifying payment records the fee as PAID and generates the Tax Invoice. It will not alter the loan underwriting decision.
+                </p>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            )}
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setModalMode(null)}
+                className="border-border text-text-secondary hover:bg-surface-elevated hover:brightness-110 text-xs"
+              >
+                Close
+              </Button>
+
+              {modalMode === 'REJECT' && (
+                <Button
+                  size="sm"
+                  onClick={() => rejectMutation.mutate({ id: activePayment.id, reason: rejectReason })}
+                  disabled={rejectMutation.isPending || !rejectReason.trim()}
+                  className="bg-[#FF5C70]/20 text-danger hover:bg-[#FF5C70] hover:text-text-primary border border-[#FF5C70]/40 font-bold text-xs"
+                >
+                  {rejectMutation.isPending && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+                  Reject Payment
+                </Button>
+              )}
+
+              {modalMode === 'VERIFY' && (
+                <Button
+                  size="sm"
+                  onClick={() => verifyMutation.mutate(activePayment.id)}
+                  disabled={verifyMutation.isPending}
+                  className="bg-success hover:bg-success/90 text-[#07111F] font-bold text-xs"
+                >
+                  {verifyMutation.isPending && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+                  Verify Payment
+                </Button>
+              )}
+
+              {modalMode === 'VIEW' && activePayment.status === 'UNDER_VERIFICATION' && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setModalMode('REJECT')}
+                    className="bg-[#FF5C70]/20 text-danger hover:bg-[#FF5C70] hover:text-text-primary border border-[#FF5C70]/40 font-bold text-xs"
+                  >
+                    Reject Payment
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => setModalMode('VERIFY')}
+                    className="bg-success hover:bg-success/90 text-[#07111F] font-bold text-xs"
+                  >
+                    Verify Payment
+                  </Button>
+                </div>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
 };
+
+export default AdminPaymentsPage;

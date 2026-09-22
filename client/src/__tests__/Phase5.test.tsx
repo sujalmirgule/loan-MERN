@@ -231,24 +231,24 @@ describe('Phase 5 Frontend Modules', () => {
   it('renders Admin Reports & Analytics with executive KPIs', async () => {
     render(<AdminReportsPage />, { wrapper: createWrapper() });
 
-    expect(screen.getByText(/Executive Reports & Analytics/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Reporting/i).length).toBeGreaterThan(0);
 
     await waitFor(() => {
-      expect(screen.getByText(/^42$/)).toBeInTheDocument(); // Total Borrowers
+      expect(screen.getByText(/^85$/)).toBeInTheDocument(); // Total Applications
       expect(screen.getAllByText(/70\.6%/)[0]).toBeInTheDocument(); // Approval rate
-      expect(screen.getByText(/Download Audit Reports/i)).toBeInTheDocument();
+      expect(screen.getByText(/Export CSV/i)).toBeInTheDocument();
     });
   });
 
   it('renders Admin Branding Settings with live preview controls', async () => {
     render(<AdminBrandingSettings />, { wrapper: createWrapper() });
 
-    expect(screen.getByText(/White-Label & Branding/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Website Branding/i).length).toBeGreaterThan(0);
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Acme Lending Corp')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Acme Loan')).toBeInTheDocument();
-      expect(screen.getByText('Live Brand Preview')).toBeInTheDocument();
+      expect(screen.getByText(/Live Customer Portal Theme Preview/i)).toBeInTheDocument();
     });
   });
 
@@ -278,12 +278,11 @@ describe('Phase 5 Frontend Modules', () => {
   it('renders Admin Support Tickets page with queue', async () => {
     render(<AdminSupportPage />, { wrapper: createWrapper() });
 
-    expect(screen.getByText(/Customer Support Tickets/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Communication Center/i).length).toBeGreaterThan(0);
 
     await waitFor(() => {
-      expect(screen.getByText('Processing Fee Query')).toBeInTheDocument();
-      expect(screen.getByText('Suresh Patil')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Reply/i })).toBeInTheDocument();
+      expect(screen.getAllByText(/WhatsApp/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Email/i).length).toBeGreaterThan(0);
     });
   });
 

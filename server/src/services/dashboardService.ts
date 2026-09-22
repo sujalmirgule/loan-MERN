@@ -1,12 +1,53 @@
 import { prisma } from './db';
 import { AppError } from '../middleware/errorHandler';
 
+export interface DashboardFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  state?: string;
+  loanType?: string;
+  status?: string;
+}
+
 export class DashboardService {
   /**
-   * Retrieves aggregated dynamic statistics, funnel data, and tracking table for the Admin Dashboard.
+   * Retrieves aggregated dynamic statistics, funnel, chart data, and tracking table.
+   * Supports optional filtering by date range, state, loan type, and status.
    */
-  async getAdminDashboardData() {
-    // 1. Calculate the 12 primary KPI metrics dynamically
+  async getAdminDashboardData(filters: DashboardFilters = {}) {
+    const { dateFrom, dateTo, state, loanType, status } = filters;
+
+    // Build date range filter
+    const dateWhere = dateFrom || dateTo
+      ? {
+          createdAt: {
+            ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+            ...(dateTo ? { lte: new Date(new Date(dateTo).setHours(23, 59, 59, 999)) } : {}),
+          },
+        }
+      : {};
+
+    // Build loan application where clause
+    const loanWhere: Record<string, unknown> = {
+      ...(status ? { status } : {}),
+      ...(loanType ? { loanType } : {}),
+      ...dateWhere,
+    };
+
+    // Build customer where clause (for state filter)
+    const customerWhere: Record<string, unknown> = {
+      isDeleted: false,
+      ...(state ? { state } : {}),
+      ...(dateWhere.createdAt ? { createdAt: dateWhere.createdAt } : {}),
+    };
+
+    // Build loan-with-state filter (join through customer)
+    const loanWithStateWhere: Record<string, unknown> = {
+      ...loanWhere,
+      ...(state ? { customer: { state } } : {}),
+    };
+
+    // 1. KPI Metrics
     const [
       totalCustomers,
       kycPending,
@@ -21,87 +62,102 @@ export class DashboardService {
       disbursementsAgg,
       activeLoansCount,
     ] = await Promise.all([
-      prisma.customer.count({ where: { isDeleted: false } }),
-      prisma.customer.count({
-        where: {
-          isDeleted: false,
-          kycStatus: { in: ['PENDING', 'UNDER_REVIEW', 'REUPLOAD_REQUIRED'] },
-        },
-      }),
-      prisma.customer.count({ where: { isDeleted: false, kycStatus: 'APPROVED' } }),
-      prisma.customer.count({ where: { isDeleted: false, kycStatus: 'REJECTED' } }),
-      prisma.loanApplication.count(),
+      prisma.customer.count({ where: customerWhere }),
+      prisma.customer.count({ where: { ...customerWhere, kycStatus: { in: ['PENDING', 'UNDER_REVIEW', 'REUPLOAD_REQUIRED'] } } }),
+      prisma.customer.count({ where: { ...customerWhere, kycStatus: 'APPROVED' } }),
+      prisma.customer.count({ where: { ...customerWhere, kycStatus: 'REJECTED' } }),
+      prisma.loanApplication.count({ where: loanWithStateWhere }),
       prisma.loanApplication.count({
-        where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD'] } },
+        where: { ...loanWithStateWhere, status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD'] } },
       }),
-      prisma.loanApplication.count({ where: { status: 'APPROVED' } }),
-      prisma.loanApplication.count({ where: { status: 'REJECTED' } }),
-      prisma.payment.count({
-        where: { status: { in: ['PENDING', 'UNDER_VERIFICATION'] } },
-      }),
-      prisma.payment.count({
-        where: { status: { in: ['PAID', 'SUCCESS'] } },
-      }),
+      prisma.loanApplication.count({ where: { ...loanWithStateWhere, status: 'APPROVED' } }),
+      prisma.loanApplication.count({ where: { ...loanWithStateWhere, status: 'REJECTED' } }),
+      prisma.payment.count({ where: { status: { in: ['PENDING', 'UNDER_VERIFICATION'] } } }),
+      prisma.payment.count({ where: { status: { in: ['PAID', 'SUCCESS'] } } }),
       prisma.disbursement.aggregate({
         where: { status: 'COMPLETED' },
         _sum: { amount: true },
       }),
-      prisma.loanApplication.count({ where: { status: 'APPROVED' } }),
+      prisma.loanApplication.count({ where: { ...loanWithStateWhere, status: 'APPROVED' } }),
     ]);
 
     const totalDisbursed = disbursementsAgg._sum.amount || 0;
 
-    // 2. Dynamic Funnel Calculations
+    // 2. Funnel Calculations
     const [kycStartedCount, paymentCompletedCount, disbursedLoansCount] = await Promise.all([
-      prisma.loanDocument.findMany({
-        select: { customerId: true },
-        distinct: ['customerId'],
-      }),
-      prisma.payment.findMany({
-        where: { status: { in: ['PAID', 'SUCCESS'] } },
-        select: { customerId: true },
-        distinct: ['customerId'],
-      }),
-      prisma.disbursement.findMany({
-        where: { status: 'COMPLETED' },
-        select: { customerId: true },
-        distinct: ['customerId'],
-      }),
+      prisma.loanDocument.findMany({ select: { customerId: true }, distinct: ['customerId'] }),
+      prisma.payment.findMany({ where: { status: { in: ['PAID', 'SUCCESS'] } }, select: { customerId: true }, distinct: ['customerId'] }),
+      prisma.disbursement.findMany({ where: { status: 'COMPLETED' }, select: { customerId: true }, distinct: ['customerId'] }),
     ]);
 
     const funnel = [
       { step: 'Registered', count: totalCustomers, percentage: 100 },
-      {
-        step: 'KYC Started',
-        count: kycStartedCount.length,
-        percentage: totalCustomers > 0 ? Math.round((kycStartedCount.length / totalCustomers) * 100) : 0,
-      },
-      {
-        step: 'KYC Completed',
-        count: kycApproved,
-        percentage: totalCustomers > 0 ? Math.round((kycApproved / totalCustomers) * 100) : 0,
-      },
-      {
-        step: 'Payment Completed',
-        count: paymentCompletedCount.length,
-        percentage: totalCustomers > 0 ? Math.round((paymentCompletedCount.length / totalCustomers) * 100) : 0,
-      },
-      {
-        step: 'Loan Approved',
-        count: approvedLoans,
-        percentage: totalCustomers > 0 ? Math.round((approvedLoans / totalCustomers) * 100) : 0,
-      },
-      {
-        step: 'Disbursed',
-        count: disbursedLoansCount.length,
-        percentage: totalCustomers > 0 ? Math.round((disbursedLoansCount.length / totalCustomers) * 100) : 0,
-      },
+      { step: 'KYC Started', count: kycStartedCount.length, percentage: totalCustomers > 0 ? Math.round((kycStartedCount.length / totalCustomers) * 100) : 0 },
+      { step: 'KYC Completed', count: kycApproved, percentage: totalCustomers > 0 ? Math.round((kycApproved / totalCustomers) * 100) : 0 },
+      { step: 'Payment Done', count: paymentCompletedCount.length, percentage: totalCustomers > 0 ? Math.round((paymentCompletedCount.length / totalCustomers) * 100) : 0 },
+      { step: 'Loan Approved', count: approvedLoans, percentage: totalCustomers > 0 ? Math.round((approvedLoans / totalCustomers) * 100) : 0 },
+      { step: 'Disbursed', count: disbursedLoansCount.length, percentage: totalCustomers > 0 ? Math.round((disbursedLoansCount.length / totalCustomers) * 100) : 0 },
     ];
 
-    // 3. Tracking Table: Recent Borrower Activity with combined statuses
+    // 3. Loan Applications Trend (last 19 days, grouped by date)
+    const trendRaw = await prisma.loanApplication.findMany({
+      where: loanWithStateWhere,
+      select: { submittedAt: true, createdAt: true, status: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const trendMap: Record<string, { date: string; applications: number; approved: number; rejected: number }> = {};
+    trendRaw.forEach((loan) => {
+      const d = (loan.submittedAt || loan.createdAt).toISOString().split('T')[0];
+      if (!trendMap[d]) trendMap[d] = { date: d, applications: 0, approved: 0, rejected: 0 };
+      trendMap[d].applications++;
+      if (loan.status === 'APPROVED') trendMap[d].approved++;
+      if (loan.status === 'REJECTED') trendMap[d].rejected++;
+    });
+    const applicationTrend = Object.values(trendMap).slice(-30);
+
+    // 4. Loan Status Distribution (for donut chart)
+    const statusCounts = await prisma.loanApplication.groupBy({
+      by: ['status'],
+      where: state ? { customer: { state } } : undefined,
+      _count: { status: true },
+    });
+    const statusDistribution = statusCounts.map((s) => ({
+      status: s.status,
+      count: s._count.status,
+    }));
+
+    // 5. Recent Applications (for table)
+    const recentApplications = await prisma.loanApplication.findMany({
+      where: loanWithStateWhere,
+      take: 20,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        customer: {
+          select: { id: true, fullName: true, mobile: true, state: true, city: true },
+        },
+      },
+    });
+
+    const recentApplicationsList = recentApplications.map((app) => ({
+      id: app.id,
+      applicationNumber: app.applicationNumber,
+      customerName: app.customer.fullName,
+      customerId: app.customer.id,
+      mobile: app.customer.mobile,
+      state: app.customer.state,
+      city: app.customer.city,
+      loanType: app.loanType || 'Personal Loan',
+      requestedAmount: app.requestedAmount,
+      approvedAmount: app.approvedAmount,
+      status: app.status,
+      submittedAt: app.submittedAt || app.createdAt,
+    }));
+
+    // 6. Tracking Table
     const recentCustomers = await prisma.customer.findMany({
-      where: { isDeleted: false },
-      take: 15,
+      where: customerWhere,
+      take: 20,
       orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
@@ -137,13 +193,9 @@ export class DashboardService {
     const trackingTable = recentCustomers.map((c) => {
       const activeLoan = c.loans[0] || null;
       const latestPayment = c.payments[0] || null;
-
       let paymentStatusDisplay = 'NOT_REQUIRED';
-      if (latestPayment) {
-        paymentStatusDisplay = latestPayment.status;
-      } else if (activeLoan?.paymentStatus) {
-        paymentStatusDisplay = activeLoan.paymentStatus;
-      }
+      if (latestPayment) paymentStatusDisplay = latestPayment.status;
+      else if (activeLoan?.paymentStatus) paymentStatusDisplay = activeLoan.paymentStatus;
 
       return {
         customerId: c.id,
@@ -178,6 +230,9 @@ export class DashboardService {
         activeLoans: activeLoansCount,
       },
       funnel,
+      applicationTrend,
+      statusDistribution,
+      recentApplications: recentApplicationsList,
       trackingTable,
     };
   }
@@ -214,27 +269,29 @@ export class DashboardService {
       throw new AppError(404, 'Customer account not found');
     }
 
-    // KYC Progress
-    const requiredTypes = ['AADHAAR_FRONT', 'AADHAAR_BACK', 'PAN'];
+    const kycRequiredTypes = ['AADHAAR_FRONT', 'AADHAAR_BACK'];
     const uploadedTypes = customer.documents.map((d) => d.documentType);
-    const uploadedCount = requiredTypes.filter((t) => uploadedTypes.includes(t)).length;
-    const kycProgressPercent = Math.min(100, Math.round((uploadedCount / requiredTypes.length) * 100));
+    const kycUploadedCount = kycRequiredTypes.filter((t) => uploadedTypes.includes(t)).length;
+    const kycProgressPercent = customer.kycStatus === 'APPROVED'
+      ? 100
+      : Math.min(100, Math.round((kycUploadedCount / kycRequiredTypes.length) * 100));
 
-    // Active Loan: prioritize approved/active loan over pending
+    const invoices = await prisma.invoice.findMany({
+      where: { customerId },
+      orderBy: { issuedAt: 'desc' },
+      take: 10,
+    });
+
     const activeLoan = customer.loans.find((l) => ['APPROVED', 'OFFER_ACCEPTED', 'DISBURSED'].includes(l.status)) || customer.loans[0] || null;
     let paymentStatus = 'NOT_REQUIRED';
     if (activeLoan) {
-      if (activeLoan.payments[0]) {
-        paymentStatus = activeLoan.payments[0].status;
-      } else {
-        paymentStatus = activeLoan.paymentStatus;
-      }
+      if (activeLoan.payments[0]) paymentStatus = activeLoan.payments[0].status;
+      else paymentStatus = activeLoan.paymentStatus;
     }
 
     const disbursement = activeLoan?.disbursements[0] || null;
     const agreement = activeLoan?.agreement || null;
 
-    // Timeline calculation based on actual business states
     const timeline = [
       { step: 'APPLICATION', title: 'Application Submitted', completed: Boolean(activeLoan), current: activeLoan?.status === 'SUBMITTED' },
       { step: 'KYC', title: 'KYC Verification', completed: customer.kycStatus === 'APPROVED', current: customer.kycStatus === 'UNDER_REVIEW' || customer.kycStatus === 'PENDING' },
@@ -263,7 +320,7 @@ export class DashboardService {
         status: customer.kycStatus,
         progressPercent: kycProgressPercent,
         documentsUploaded: customer.documents.length,
-        requiredMissing: requiredTypes.filter((t) => !uploadedTypes.includes(t)),
+        requiredMissing: kycRequiredTypes.filter((t) => !uploadedTypes.includes(t)),
       },
       loanSummary: activeLoan
         ? {
@@ -288,6 +345,7 @@ export class DashboardService {
           }
         : null,
       timeline,
+      invoices,
       notifications: customer.notifications,
     };
   }

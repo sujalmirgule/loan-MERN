@@ -18,7 +18,8 @@ model AdminUser {
   email        String    @unique
   passwordHash String
   fullName     String
-  role         String    @default("ADMIN")
+  role         String    @default("STAFF") // SUPER_ADMIN, ADMIN, STAFF
+  permissions  String    @default("[]") // JSON string array of granted permission keys
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
@@ -35,12 +36,26 @@ model Customer {
   mobile          String    @unique
   fullName        String
   email           String
+  passwordHash    String?
+  fatherName      String?
+  gender          String?
+  dob             String?
   address         String
   state           String
   city            String
+  pincode         String?
   aadhaarEncrypted String
   aadhaarMasked   String
+  panEncrypted    String?
+  panMasked       String?
   monthlyIncome   Float
+  bankName        String?
+  bankAccountNumber String?
+  bankIfsc        String?
+  bankBranch      String?
+  bankAccountType String?
+  domainId        String?
+  domain          Domain?   @relation(fields: [domainId], references: [id], onDelete: SetNull)
   status          String    @default("ACTIVE") // ACTIVE, SUSPENDED, ARCHIVED
   kycStatus       String    @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, REUPLOAD_REQUIRED
   isDeleted       Boolean   @default(false)
@@ -56,6 +71,10 @@ model Customer {
   payments        Payment[]
   notifications   Notification[]
   supportTickets  SupportTicket[]
+  charges         Charge[]
+  invoices        Invoice[]
+  whatsappMessages WhatsAppMessage[]
+  emailMessages   EmailMessage[]
 
   @@index([mobile])
   @@index([email])
@@ -63,6 +82,7 @@ model Customer {
   @@index([city])
   @@index([kycStatus])
   @@index([createdAt])
+  @@index([domainId])
 }
 
 // -------------------------------------------------------------
@@ -71,6 +91,9 @@ model Customer {
 model LoanApplication {
   id                   String    @id @default(uuid())
   applicationNumber    String    @unique // e.g. LA-2026-000001
+  accountNumber        String?   // e.g. LN20260906142729
+  approvalNumber       String?   // e.g. LN20260906142729
+  loanType             String?   @default("Personal Loan")
   customerId           String
   customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   
@@ -86,10 +109,15 @@ model LoanApplication {
   processingFeeType    String    @default("PERCENTAGE") // PERCENTAGE, FIXED
   processingFeeValue   Float     @default(2.0)
   processingFeeAmount  Float     @default(0)
+  insuranceAmount      Float?    @default(0)
+  totalPayable         Float?
+  remainingBalance     Float?
   
   tenureMonths         Int
   estimatedEmi         Float?    @default(0)
   finalEmi             Float?
+  disbursementDate     DateTime?
+  nextEmiDate          DateTime?
   
   purpose              String?
   status               String    @default("SUBMITTED") 
@@ -102,6 +130,9 @@ model LoanApplication {
   modifiedOfferAccepted Boolean?
   paymentStatus        String    @default("NOT_REQUIRED") // NOT_REQUIRED, PAYMENT_REQUIRED, UNDER_VERIFICATION, PAID
   
+  domainId             String?
+  domain               Domain?   @relation(fields: [domainId], references: [id], onDelete: SetNull)
+
   reviewedBy           String?
   reviewedAt           DateTime?
   submittedAt          DateTime? @default(now())
@@ -114,12 +145,19 @@ model LoanApplication {
   disbursements        Disbursement[]
   emiSchedules         EMISchedule[]
   payments             Payment[]
+  charges              Charge[]
+  invoices             Invoice[]
+  whatsappMessages     WhatsAppMessage[]
+  emailMessages        EmailMessage[]
 
   @@index([applicationNumber])
+  @@index([accountNumber])
+  @@index([approvalNumber])
   @@index([customerId])
   @@index([status])
   @@index([createdAt])
   @@index([submittedAt])
+  @@index([domainId])
 }
 
 // -------------------------------------------------------------
@@ -275,6 +313,9 @@ model Payment {
   verifiedAt     DateTime?
   rejectionReason String?
   notes          String?
+  chargeId       String?
+  upiVpa         String?
+  submittedAt    DateTime?
   paymentDate    DateTime        @default(now())
 
   @@index([loanId])
@@ -343,6 +384,70 @@ model BrandingSettings {
   website         String   @default("https://loanapprove.com")
   termsUrl        String   @default("https://loanapprove.com/terms")
   privacyUrl      String   @default("https://loanapprove.com/privacy")
+  companyLegalName String   @default("Loan Approve Financial Services Pvt. Ltd.")
+  authorizedSignatoryName String @default("Authorized Underwriting Officer")
+  authorizedSignatoryDesignation String @default("Credit & Sanction Division")
+  authorizedSignatureUrl String?
+  companyStampUrl String?
+
+  // ── Document & PDF Branding (Approval Letter & Invoice) ───────
+  approvalLetterHeaderUrl   String?  // Complete 1024x232 banner artwork for top of Approval Letter
+  secondaryLogoUrl          String?  // Secondary PNG / side scheme logo
+  watermarkLogoUrl          String?  // Background watermark logo (300x300 emblem)
+  documentWatermarkEnabled  Boolean  @default(true) // Watermark ON/OFF for Approval Letter
+  invoiceWatermarkEnabled   Boolean  @default(true) // Watermark ON/OFF for Tax Invoices
+  watermarkOpacity          Float    @default(0.10) // Range: 0.05 - 0.30 (default 10%)
+  watermarkSize             String   @default("MEDIUM") // "SMALL", "MEDIUM", "LARGE"
+  watermarkPosition         String   @default("CENTER") // "CENTER", "TOP", "BOTTOM"
+
+  // ── Website / Landing Page Configuration ──────────────────────
+  // Lender / Financial Partner Disclosure
+  lenderName                String?  // Configurable — do NOT hardcode
+  lenderLegalName           String?
+  lenderRegistrationNumber  String?  // e.g. NBFC registration — only if verified
+  lenderType                String?  // e.g. "NBFC", "Bank", "MFI"
+  lenderAddress             String?
+  lenderWebsite             String?
+  isDirectLender            Boolean  @default(false)
+  partnerName               String?
+  partnerRelationship       String?  // e.g. "Loan Facilitator / DSA"
+
+  // Loan Financial Parameters (shown on landing page & EMI calculator)
+  minLoanAmount             Float    @default(10000)
+  maxLoanAmount             Float    @default(3000000)
+  minTenureMonths           Int      @default(6)
+  maxTenureMonths           Int      @default(84)
+  minApr                    Float    @default(12.0)
+  maxApr                    Float    @default(36.0)
+  processingFeePolicy       String   @default("Processing fee applicable as per loan terms. GST as per applicable rates.")
+  otherChargesPolicy        String   @default("Late payment charges, prepayment charges, and other fees as per the approved loan agreement.")
+
+  // Eligibility Configuration
+  minAge                    Int      @default(18)
+  maxAge                    Int      @default(60)
+  minMonthlyIncome          Float    @default(15000)
+  creditScoreCriteria       String   @default("Good credit history preferred. Applications assessed individually.")
+  bankAccountRequired       Boolean  @default(true)
+  employmentCriteria        String   @default("Salaried, Self-Employed, or Business Owner")
+  residentialStatusCriteria String   @default("Indian Resident with valid address proof")
+
+  // Document Checklist (JSON array of {id, name, description, icon, enabled, mandatory})
+  documentsConfigJson       String   @default("[]")
+
+  // Disclaimer & Legal (Page 5 from PDF)
+  disclaimerText            String?
+
+  // FAQs (JSON array of {question, answer})
+  faqsJson                  String   @default("[]")
+
+  // Mobile App CTA
+  appEnabled                Boolean  @default(false)
+  appDownloadUrl            String?
+
+  // Hero Content
+  heroHeadline              String   @default("Simple, Transparent Loan Application")
+  heroSubheadline           String   @default("Apply online, complete verification, and track your application status — all in one place.")
+
   updatedAt       DateTime @updatedAt
 }
 
@@ -359,6 +464,7 @@ model SupportTicket {
   adminReply  String?
   createdAt   DateTime  @default(now())
   resolvedAt  DateTime?
+  emailMessages EmailMessage[]
 
   @@index([customerId])
   @@index([status])
@@ -406,6 +512,244 @@ model PaymentConfig {
   ifscCode          String   @default("HDFC0001234")
   accountHolderName String   @default("Loan Approve Financial Services")
   instructions      String   @default("Please transfer the processing fee using UPI or IMPS and enter the 12-digit UTR number below.")
+  defaultInterestRate Float  @default(12.0)
+  kycChargeAmount     Float  @default(499)
+  processingFeeAmount Float  @default(1999)
+  loanDocFeeEnabled   Boolean @default(false)
+  loanDocFeeAmount    Float   @default(999)
   updatedAt         DateTime @updatedAt
 }
+
+// -------------------------------------------------------------
+// 16. DOMAIN MANAGEMENT (Multi-tenant)
+// -------------------------------------------------------------
+model Domain {
+  id              String            @id @default(uuid())
+  domainName      String            @unique
+  helplineNumber  String?           @default("+91 8042054797")
+  contactEmail    String?           @default("contact@loanapprove.com")
+  description     String?
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  customers       Customer[]
+  loans           LoanApplication[]
+
+  @@index([domainName])
+  @@index([isActive])
+}
+
+// -------------------------------------------------------------
+// 17. PAYMENT LINKS
+// -------------------------------------------------------------
+model PaymentLink {
+  id          String   @id @default(uuid())
+  title       String
+  url         String
+  description String?
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+}
+
+// -------------------------------------------------------------
+// 18. CHARGES & FEES
+// -------------------------------------------------------------
+model Charge {
+  id          String           @id @default(uuid())
+  name        String
+  amount      Float
+  type        String           @default("FIXED") // FIXED, PERCENTAGE
+  isMandatory Boolean          @default(true)
+  isActive    Boolean          @default(true)
+  taxPercent  Float            @default(18.0)
+  customerId  String?
+  customer    Customer?        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  loanId      String?
+  loan        LoanApplication? @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  status      String           @default("PENDING") // PENDING, PAID, FAILED, CANCELLED
+  remark      String?
+  dueDate     DateTime?
+  createdBy   String?
+  paidAt      DateTime?
+  transactionRef String?
+  paymentId   String?
+  sentAt      DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([customerId])
+  @@index([loanId])
+  @@index([isActive])
+}
+
+// -------------------------------------------------------------
+// 19. ADVANCED UPI SETTINGS
+// -------------------------------------------------------------
+model UPISettings {
+  id               String   @id @default("default")
+  upiEnabled       Boolean  @default(false)
+  upiId            String   @default("")
+  merchantName     String?  @default("")
+  gpayEnabled      Boolean  @default(false)
+  gpayId           String   @default("")
+  phonepeEnabled   Boolean  @default(false)
+  phonepeId        String   @default("")
+  paytmEnabled     Boolean  @default(false)
+  paytmId          String   @default("")
+  otherUpiEnabled  Boolean  @default(false)
+  otherUpiId       String   @default("")
+  qrCodeUrl        String?
+  updatedAt        DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// 20. ADVANCED BANK SETTINGS
+// -------------------------------------------------------------
+model BankSettings {
+  id            String   @id @default("default")
+  bankEnabled   Boolean  @default(true)
+  accountHolder String   @default("Loan Approve Financial Services Pvt Ltd")
+  accountNumber String   @default("50200084729104")
+  bankName      String   @default("HDFC Bank")
+  ifsc          String   @default("HDFC0000060")
+  branch        String   @default("Fort, Mumbai")
+  updatedAt     DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// 21. VERIFICATION TOKEN (QR Code & Public Verification)
+// -------------------------------------------------------------
+model VerificationToken {
+  id                String   @id @default(uuid())
+  token             String   @unique
+  documentType      String   @default("APPROVAL_LETTER")
+  entityId          String   // Loan ID or Document ID
+  customerName      String
+  applicationNumber String
+  loanAccountNumber String
+  approvalDate      DateTime @default(now())
+  status            String   @default("VERIFIED")
+  createdAt         DateTime @default(now())
+
+  @@index([token])
+  @@index([entityId])
+}
+
+// -------------------------------------------------------------
+// 22. WHATSAPP MESSAGE (Communication History)
+// -------------------------------------------------------------
+model WhatsAppMessage {
+  id                String           @id @default(uuid())
+  customerId        String
+  customer          Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  loanId            String?
+  loan              LoanApplication? @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  adminId           String?
+  phone             String
+  message           String
+  templateName      String?
+  providerMessageId String?
+  status            String           @default("SENT") // SENT, DELIVERED, FAILED
+  sentAt            DateTime?        @default(now())
+  failedAt          DateTime?
+  failureReason     String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([customerId])
+  @@index([loanId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// -------------------------------------------------------------
+// 23. EMAIL MESSAGE (Customer Communication Center)
+// -------------------------------------------------------------
+model EmailMessage {
+  id                String           @id @default(uuid())
+  customerId        String
+  customer          Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  loanId            String?
+  loan              LoanApplication? @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  ticketId          String?
+  ticket            SupportTicket?   @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  adminId           String?
+  recipientEmail    String
+  subject           String
+  message           String
+  templateName      String?
+  status            String           @default("SENT") // SENT, FAILED, PENDING
+  providerMessageId String?
+  sentAt            DateTime?        @default(now())
+  failedAt          DateTime?
+  failureReason     String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([customerId])
+  @@index([loanId])
+  @@index([ticketId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// -------------------------------------------------------------
+// 24. COMMUNICATION SETTINGS (Automated Event Configuration)
+// -------------------------------------------------------------
+model CommunicationSettings {
+  id                            String   @id @default("default")
+  emailEnabled                  Boolean  @default(false)
+  whatsAppEnabled               Boolean  @default(false)
+  autoEmailOnPaymentVerified    Boolean  @default(true)
+  autoEmailOnLoanApproved       Boolean  @default(true)
+  autoEmailOnLoanRejected       Boolean  @default(true)
+  autoEmailOnKycVerified        Boolean  @default(true)
+  autoEmailOnKycRejected        Boolean  @default(true)
+  autoEmailOnChargeCreated      Boolean  @default(true)
+  autoWhatsAppOnPaymentVerified Boolean  @default(false)
+  autoWhatsAppOnKycPending      Boolean  @default(false)
+  autoWhatsAppOnLoanApproved    Boolean  @default(false)
+  autoWhatsAppOnLoanRejected    Boolean  @default(false)
+  autoWhatsAppOnChargeCreated   Boolean  @default(false)
+  updatedAt                     DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// 25. INVOICE (Persisted Individual Fee / Charge Invoices)
+// -------------------------------------------------------------
+model Invoice {
+  id                 String           @id @default(uuid())
+  invoiceNumber      String           @unique // e.g. INV-2026-000001
+  customerId         String
+  customer           Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  loanId             String
+  loan               LoanApplication  @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  chargeId           String?          @unique // 1 Charge = 1 Invoice idempotency
+  paymentId          String?
+  chargeName         String
+  amount             Float
+  taxAmount          Float            @default(0)
+  totalAmount        Float
+  currency           String           @default("INR")
+  status             String           @default("PAID") // PAID, ISSUED, VOID
+  storageKey         String
+  filePath           String
+  fileUrl            String
+  templateVersion    String           @default("v1.0")
+  brandingVersion    String           @default("v1.0")
+  issuedAt           DateTime         @default(now())
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([customerId])
+  @@index([loanId])
+  @@index([chargeId])
+  @@index([paymentId])
+  @@index([invoiceNumber])
+}
+
 

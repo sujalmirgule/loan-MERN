@@ -22,6 +22,8 @@ export interface CustomerUser {
 export interface AdminUser {
   id: string;
   role: 'ADMIN';
+  adminRole?: 'SUPER_ADMIN' | 'ADMIN' | 'STAFF';
+  permissions?: string[];
   fullName: string;
   email: string;
   lastLoginAt: string | null;
@@ -62,6 +64,7 @@ interface AuthContextType {
   role: UserRole | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  hasPermission: (permissionKey: string | string[]) => boolean;
   loginCustomer: (mobile: string) => Promise<void>;
   registerCustomer: (data: CustomerRegisterData) => Promise<void>;
   loginAdmin: (email: string, password: string) => Promise<void>;
@@ -79,13 +82,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Restore authenticated session on initial app load
   const restoreSession = useCallback(async () => {
-    const activeRole = localStorage.getItem('loan_approve_active_role') as UserRole | null;
-    const token =
-      activeRole === 'ADMIN'
-        ? localStorage.getItem('loan_approve_admin_token')
-        : localStorage.getItem('loan_approve_customer_token');
+    const isPathAdmin = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+    const isPathCustomer = typeof window !== 'undefined' && window.location.pathname.startsWith('/customer');
 
-    if (!token || !activeRole) {
+    let activeRole: UserRole | null = null;
+    let token: string | null = null;
+
+    if (isPathAdmin) {
+      activeRole = 'ADMIN';
+      token = localStorage.getItem('loan_approve_admin_token');
+    } else if (isPathCustomer) {
+      activeRole = 'CUSTOMER';
+      token = localStorage.getItem('loan_approve_customer_token');
+    } else {
+      const storedRole = localStorage.getItem('loan_approve_active_role') as UserRole | null;
+      if (storedRole === 'ADMIN' && localStorage.getItem('loan_approve_admin_token')) {
+        activeRole = 'ADMIN';
+        token = localStorage.getItem('loan_approve_admin_token');
+      } else if (localStorage.getItem('loan_approve_customer_token')) {
+        activeRole = 'CUSTOMER';
+        token = localStorage.getItem('loan_approve_customer_token');
+      } else if (localStorage.getItem('loan_approve_admin_token')) {
+        activeRole = 'ADMIN';
+        token = localStorage.getItem('loan_approve_admin_token');
+      }
+    }
+
+    if (!token || token === 'undefined' || token === 'null' || !activeRole) {
+      if (token === 'undefined' || token === 'null') {
+        if (activeRole === 'ADMIN') localStorage.removeItem('loan_approve_admin_token');
+        else localStorage.removeItem('loan_approve_customer_token');
+      }
       setIsLoading(false);
       return;
     }
@@ -95,17 +122,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         tokenType: activeRole === 'ADMIN' ? 'admin' : 'customer',
       });
 
-      if (response.success && response.data.user) {
+      if (response.success && response.data?.user) {
         setUser(response.data.user);
         setRole(response.data.user.role);
+        localStorage.setItem('loan_approve_active_role', response.data.user.role);
       } else {
         throw new Error('Session invalid');
       }
     } catch {
-      // Clear corrupt or expired tokens
-      localStorage.removeItem('loan_approve_customer_token');
-      localStorage.removeItem('loan_approve_admin_token');
-      localStorage.removeItem('loan_approve_active_role');
+      // Clear corrupt or expired token for only the target role
+      if (activeRole === 'ADMIN') {
+        localStorage.removeItem('loan_approve_admin_token');
+      } else {
+        localStorage.removeItem('loan_approve_customer_token');
+      }
       setUser(null);
       setRole(null);
     } finally {
@@ -125,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ mobile }),
       });
 
-      if (response.success && response.data) {
+      if (response.success && response.data?.token) {
         localStorage.setItem('loan_approve_customer_token', response.data.token);
         localStorage.setItem('loan_approve_active_role', 'CUSTOMER');
         setUser(response.data.user);
@@ -144,7 +174,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify(data),
       });
 
-      if (response.success && response.data) {
+      if (response.success && response.data?.token) {
         localStorage.setItem('loan_approve_customer_token', response.data.token);
         localStorage.setItem('loan_approve_active_role', 'CUSTOMER');
         setUser(response.data.user);
@@ -163,7 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ email, password }),
       });
 
-      if (response.success && response.data) {
+      if (response.success && response.data?.token) {
         localStorage.setItem('loan_approve_admin_token', response.data.token);
         localStorage.setItem('loan_approve_active_role', 'ADMIN');
         setUser(response.data.user);
@@ -175,16 +205,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    const currentRole = role;
     try {
       await apiClient(API_ENDPOINTS.AUTH.LOGOUT, {
         method: 'POST',
+        tokenType: currentRole === 'ADMIN' ? 'admin' : 'customer',
       }).catch(() => {
         // Ignore server error on logout
       });
     } finally {
-      localStorage.removeItem('loan_approve_customer_token');
-      localStorage.removeItem('loan_approve_admin_token');
-      localStorage.removeItem('loan_approve_active_role');
+      if (currentRole === 'ADMIN') {
+        localStorage.removeItem('loan_approve_admin_token');
+      } else {
+        localStorage.removeItem('loan_approve_customer_token');
+      }
+      if (localStorage.getItem('loan_approve_active_role') === currentRole) {
+        localStorage.removeItem('loan_approve_active_role');
+      }
       setUser(null);
       setRole(null);
     }
@@ -204,6 +241,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const hasPermission = useCallback(
+    (permissionKey: string | string[]): boolean => {
+      if (!user || user.role !== 'ADMIN') return false;
+      const adminUser = user as AdminUser;
+      if (adminUser.adminRole === 'SUPER_ADMIN') return true;
+      const userPerms = adminUser.permissions || [];
+      if (Array.isArray(permissionKey)) {
+        return permissionKey.some((k) => userPerms.includes(k));
+      }
+      return userPerms.includes(permissionKey);
+    },
+    [user]
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -211,6 +262,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role,
         isAuthenticated: !!user,
         isLoading,
+        hasPermission,
         loginCustomer,
         registerCustomer,
         loginAdmin,

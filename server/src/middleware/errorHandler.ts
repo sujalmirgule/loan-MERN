@@ -42,7 +42,13 @@ export function errorHandler(
     res.status(err.statusCode).json({
       success: false,
       message: err.message,
-      ...(err.errors ? { errors: err.errors } : {}),
+      ...(err.errors
+        ? {
+            errors: err.errors,
+            error: typeof err.errors === 'string' ? err.errors : undefined,
+            code: typeof err.errors === 'string' ? err.errors : undefined,
+          }
+        : {}),
     });
     return;
   }

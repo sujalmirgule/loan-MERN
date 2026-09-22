@@ -2,10 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyAuthToken, UserRole } from '../services/tokenService';
 import { prisma } from '../services/db';
 import { AppError } from './errorHandler';
+import { ROLE_PRESETS } from '../constants/permissions';
+
+export type AdminRoleType = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF';
 
 export interface AuthenticatedUser {
   id: string;
   role: UserRole;
+  adminRole?: AdminRoleType;
+  permissions?: string[];
   fullName: string;
   email: string;
   mobile?: string;
@@ -20,7 +25,7 @@ declare global {
 }
 
 /**
- * Validates the JWT Bearer token and attaches the authenticated user to req.user.
+ * Validates the JWT Bearer token and attaches the authenticated user with fresh permissions from DB.
  */
 export async function authenticate(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
@@ -60,16 +65,37 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     } else if (payload.role === 'ADMIN') {
       const admin = await prisma.adminUser.findUnique({
         where: { id: payload.sub },
-        select: { id: true, fullName: true, email: true, isActive: true },
+        select: { id: true, fullName: true, email: true, role: true, permissions: true, isActive: true },
       });
 
       if (!admin || !admin.isActive) {
         throw new AppError(401, 'Administrator account does not exist or has been deactivated');
       }
 
+      // Parse granular permissions
+      let userPermissions: string[] = [];
+      try {
+        if (admin.permissions) {
+          const parsed = JSON.parse(admin.permissions);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            userPermissions = parsed;
+          }
+        }
+      } catch {
+        userPermissions = [];
+      }
+
+      // Fall back to default role preset if empty
+      const adminRole = (admin.role as AdminRoleType) || 'STAFF';
+      if (userPermissions.length === 0 && ROLE_PRESETS[adminRole]) {
+        userPermissions = [...ROLE_PRESETS[adminRole]];
+      }
+
       req.user = {
         id: admin.id,
         role: 'ADMIN',
+        adminRole,
+        permissions: userPermissions,
         fullName: admin.fullName,
         email: admin.email,
       };
@@ -102,3 +128,37 @@ export function requireRole(allowedRole: UserRole) {
 
 export const requireCustomer = requireRole('CUSTOMER');
 export const requireAdmin = requireRole('ADMIN');
+
+/**
+ * Granular Permission authorization guard restricting endpoint access to specific permissions.
+ * SUPER_ADMIN has automatic bypass.
+ */
+export function requirePermission(permission: string | string[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      return next(new AppError(401, 'Authentication required'));
+    }
+
+    if (req.user.role !== 'ADMIN') {
+      return next(new AppError(403, 'Access forbidden: Requires Administrator privileges'));
+    }
+
+    // SUPER_ADMIN has full system access
+    if (req.user.adminRole === 'SUPER_ADMIN') {
+      return next();
+    }
+
+    const userPermissions = req.user.permissions || [];
+    const requiredList = Array.isArray(permission) ? permission : [permission];
+
+    // Check if user has at least one of the required permissions
+    const hasAccess = requiredList.some((perm) => userPermissions.includes(perm));
+
+    if (!hasAccess) {
+      const requiredStr = requiredList.join(', ');
+      return next(new AppError(403, `Access forbidden: Missing required permission [${requiredStr}]`));
+    }
+
+    next();
+  };
+}

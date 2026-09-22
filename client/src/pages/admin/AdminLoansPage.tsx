@@ -17,6 +17,8 @@ import {
   AdminLoanApplicationListItem,
   PaginatedAdminLoansResponse,
 } from '@/api/loanApi';
+import { apiClient } from '@/api/client';
+import { API_ENDPOINTS } from '@/api/endpoints';
 import { LoanStatusBadge } from '@/components/LoanStatusBadge';
 import {
   Search,
@@ -28,6 +30,9 @@ import {
   FileSpreadsheet,
   Loader2,
   MapPin,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
 } from 'lucide-react';
 
 export const AdminLoansPage: React.FC = () => {
@@ -40,7 +45,22 @@ export const AdminLoansPage: React.FC = () => {
   const [status, setStatus] = useState<string>('');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [stateFilter, setStateFilter] = useState<string>('');
-  const [cityFilter, setCityFilter] = useState<string>('');
+  const [loanType, setLoanType] = useState<string>('');
+
+  // Dynamically load distinct states
+  const { data: statesData = [] } = useQuery<string[]>({
+    queryKey: ['admin-customer-states'],
+    queryFn: async () => {
+      const res = await apiClient.get(API_ENDPOINTS.CUSTOMERS.STATES);
+      return Array.isArray(res.data) ? res.data : Array.isArray(res.data?.data) ? res.data.data : [];
+    },
+  });
+
+  const statesList: string[] = Array.isArray(statesData)
+    ? statesData
+    : Array.isArray((statesData as any)?.data)
+    ? (statesData as any).data
+    : [];
 
   const {
     data: response,
@@ -56,7 +76,7 @@ export const AdminLoansPage: React.FC = () => {
       status,
       dateFilter,
       stateFilter,
-      cityFilter,
+      loanType,
     ],
     queryFn: () =>
       loanApi.getAdminApplications({
@@ -66,8 +86,9 @@ export const AdminLoansPage: React.FC = () => {
         status: status || undefined,
         dateFilter: dateFilter || undefined,
         state: stateFilter || undefined,
-        city: cityFilter || undefined,
+        loanType: loanType || undefined,
       }),
+    refetchInterval: 1500,
   });
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -82,7 +103,7 @@ export const AdminLoansPage: React.FC = () => {
     setStatus('');
     setDateFilter('');
     setStateFilter('');
-    setCityFilter('');
+    setLoanType('');
     setPage(1);
   };
 
@@ -103,15 +124,15 @@ export const AdminLoansPage: React.FC = () => {
     };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-extrabold tracking-tight text-text-primary">
             Loan Applications Underwriting
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage incoming loan requests, conduct credit reviews, request verification documents, and propose offers.
+          <p className="text-xs sm:text-sm text-text-secondary mt-0.5">
+            Conduct credit reviews, verify borrower records, and propose sanction terms.
           </p>
         </div>
         <Button
@@ -119,7 +140,7 @@ export const AdminLoansPage: React.FC = () => {
           size="sm"
           onClick={() => refetch()}
           disabled={isFetching}
-          className="self-start sm:self-auto text-xs"
+          className="self-start sm:self-auto text-xs bg-surface-elevated border-border text-text-primary hover:bg-surface-elevated hover:brightness-110 h-9"
         >
           {isFetching ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5 mr-1.5" />}
           Refresh
@@ -127,29 +148,29 @@ export const AdminLoansPage: React.FC = () => {
       </div>
 
       {/* Filter and Search Bar */}
-      <Card className="shadow-sm border-border">
+      <Card className="bg-surface-elevated border border-border shadow-sm">
         <CardContent className="p-4 space-y-3">
           <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Search className="w-4 h-4 text-text-secondary absolute left-3 top-2.5" />
               <Input
                 placeholder="Search by Application #, Borrower Name, Mobile, Email..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-9 text-sm"
+                className="pl-9 text-xs bg-surface border-border text-text-primary h-9 placeholder-[#8FA3BA]/60"
               />
             </div>
-            <Button type="submit" size="sm" className="bg-slate-900 hover:bg-slate-800 text-white">
+            <Button type="submit" size="sm" className="bg-primary hover:bg-primary/90 text-text-primary text-xs h-9 font-bold px-4">
               Search
             </Button>
           </form>
 
           {/* Combined Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-2 border-t border-border">
             {/* Status Filter */}
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-                Status
+              <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider block mb-1">
+                Application Status
               </label>
               <select
                 value={status}
@@ -172,9 +193,32 @@ export const AdminLoansPage: React.FC = () => {
               </select>
             </div>
 
+            {/* Loan Type Filter */}
+            <div>
+              <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider block mb-1">
+                Loan Type
+              </label>
+              <select
+                value={loanType}
+                onChange={(e) => {
+                  setLoanType(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full text-xs h-9 rounded-md border border-input bg-background px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">All Loan Types</option>
+                <option value="Personal Loan">Personal Loan</option>
+                <option value="Business Loan">Business Loan</option>
+                <option value="Home Loan">Home Loan</option>
+                <option value="Education Loan">Education Loan</option>
+                <option value="Gold Loan">Gold Loan</option>
+                <option value="Vehicle Loan">Vehicle Loan</option>
+              </select>
+            </div>
+
             {/* Date Filter */}
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+              <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider block mb-1">
                 Submission Date
               </label>
               <select
@@ -195,61 +239,53 @@ export const AdminLoansPage: React.FC = () => {
 
             {/* State Filter */}
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+              <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider block mb-1">
                 State
               </label>
-              <Input
-                placeholder="e.g. Karnataka, Maharashtra"
+              <select
                 value={stateFilter}
                 onChange={(e) => {
                   setStateFilter(e.target.value);
                   setPage(1);
                 }}
-                className="h-9 text-xs"
-              />
+                className="w-full text-xs h-9 rounded-md border border-input bg-background px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring overflow-y-auto"
+              >
+                <option value="">All States</option>
+                {statesList.map((st) => (
+                  <option key={st} value={st}>
+                    {st}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* City Filter */}
-            <div>
-              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-                City
-              </label>
-              <div className="flex gap-1.5">
-                <Input
-                  placeholder="e.g. Bengaluru, Pune"
-                  value={cityFilter}
-                  onChange={(e) => {
-                    setCityFilter(e.target.value);
-                    setPage(1);
-                  }}
-                  className="h-9 text-xs"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleResetFilters}
-                  title="Reset Filters"
-                  className="px-2 h-9 text-slate-500 hover:text-slate-900"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </Button>
-              </div>
+            {/* Reset Filters */}
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleResetFilters}
+                className="w-full h-9 text-xs text-slate-600 hover:text-slate-900 border-dashed"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                Reset Filters
+              </Button>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Applications Data Table (Desktop) / Cards (Mobile) */}
-      <Card className="shadow-sm border-border">
-        <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+      <Card className="bg-surface-elevated border border-border shadow-sm">
+        <CardHeader className="pb-3 border-b border-border flex flex-row items-center justify-between">
           <div className="flex items-center space-x-2">
-            <FileSpreadsheet className="w-5 h-5 text-slate-600" />
-            <CardTitle className="text-base font-semibold">
+            <FileSpreadsheet className="w-5 h-5 text-primary" />
+            <CardTitle className="text-base font-semibold text-text-primary">
               Applications ({pagination.total})
             </CardTitle>
           </div>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-text-secondary">
             Page {pagination.page} of {pagination.totalPages}
           </span>
         </CardHeader>
@@ -257,17 +293,17 @@ export const AdminLoansPage: React.FC = () => {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center space-y-3">
-              <Loader2 className="w-8 h-8 text-slate-600 animate-spin" />
-              <p className="text-sm text-slate-500">Loading underwriting records...</p>
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              <p className="text-sm text-text-secondary">Loading underwriting records...</p>
             </div>
           ) : applications.length === 0 ? (
             <div className="py-16 text-center space-y-2">
-              <Filter className="w-10 h-10 text-slate-300 mx-auto" />
-              <h3 className="font-semibold text-slate-700">No applications found</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+              <Filter className="w-10 h-10 text-text-secondary/40 mx-auto" />
+              <h3 className="font-semibold text-text-primary">No applications found</h3>
+              <p className="text-xs text-text-secondary max-w-sm mx-auto">
                 No loan records match your current search and filter criteria. Try resetting filters.
               </p>
-              <Button variant="outline" size="sm" onClick={handleResetFilters} className="text-xs mt-2">
+              <Button variant="outline" size="sm" onClick={handleResetFilters} className="text-xs mt-2 border-border text-text-secondary">
                 Reset All Filters
               </Button>
             </div>
@@ -276,16 +312,18 @@ export const AdminLoansPage: React.FC = () => {
               {/* Desktop Table */}
               <div className="hidden md:block overflow-x-auto">
                 <Table>
-                  <TableHeader className="bg-slate-50">
-                    <TableRow>
-                      <TableHead className="text-xs">Application #</TableHead>
-                      <TableHead className="text-xs">Borrower Name</TableHead>
-                      <TableHead className="text-xs">Location</TableHead>
-                      <TableHead className="text-xs">Requested</TableHead>
-                      <TableHead className="text-xs">Tenure</TableHead>
-                      <TableHead className="text-xs">Status</TableHead>
-                      <TableHead className="text-xs">Submitted</TableHead>
-                      <TableHead className="text-xs text-right">Action</TableHead>
+                  <TableHeader className="bg-surface border-b border-border">
+                    <TableRow className="border-b border-border">
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">Application #</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">Borrower Name</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">State</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">Loan Type</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">Requested</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">Tenure</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">KYC Status</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">Loan Status</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase">Submitted</TableHead>
+                      <TableHead className="text-xs text-text-secondary font-bold uppercase text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -298,12 +336,15 @@ export const AdminLoansPage: React.FC = () => {
                           <div className="text-xs font-semibold text-slate-900">
                             {app.customerName}
                           </div>
-                          <div className="text-[11px] text-slate-500 font-mono">
+                          <div className="text-[11px] text-text-secondary font-mono">
                             +91 {app.mobile}
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-slate-600">
-                          {app.city}, {app.state}
+                          {app.state}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-700 font-medium">
+                          {app.loanType || 'Personal Loan'}
                         </TableCell>
                         <TableCell className="text-xs font-bold text-slate-900">
                           ₹{app.requestedAmount.toLocaleString('en-IN')}
@@ -317,9 +358,44 @@ export const AdminLoansPage: React.FC = () => {
                           {app.tenureMonths} Mo.
                         </TableCell>
                         <TableCell>
+                          {(() => {
+                            const st = (app.kycStatus || 'PENDING').toUpperCase();
+                            if (st === 'APPROVED' || st === 'VERIFIED') {
+                              return (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  Verified
+                                </span>
+                              );
+                            }
+                            if (st === 'REJECTED') {
+                              return (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  Rejected
+                                </span>
+                              );
+                            }
+                            if (st === 'REUPLOAD_REQUIRED' || st === 'CORRECTION_REQUIRED') {
+                              return (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  Correction
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                <Clock className="w-3 h-3 mr-1" />
+                                Pending
+                              </span>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell>
                           <LoanStatusBadge status={app.status} />
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500">
+                        <TableCell className="text-xs text-text-secondary">
                           {new Date(app.submittedAt || app.createdAt).toLocaleDateString()}
                         </TableCell>
                         <TableCell className="text-right">
@@ -354,29 +430,56 @@ export const AdminLoansPage: React.FC = () => {
                     </div>
                     <div>
                       <h4 className="font-semibold text-sm text-slate-900">{app.customerName}</h4>
-                      <p className="text-xs text-slate-500 font-mono">+91 {app.mobile}</p>
+                      <p className="text-xs text-text-secondary font-mono">+91 {app.mobile}</p>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1 border-t border-slate-100">
+                    <div className="flex items-center justify-between text-xs py-1 border-y border-slate-100">
+                      <span className="text-slate-600 font-medium">{app.loanType || 'Personal Loan'}</span>
                       <div>
-                        <span className="text-[10px] text-slate-400 block">Requested</span>
+                        {(() => {
+                          const st = (app.kycStatus || 'PENDING').toUpperCase();
+                          if (st === 'APPROVED' || st === 'VERIFIED') {
+                            return (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                KYC: Verified
+                              </span>
+                            );
+                          }
+                          if (st === 'REJECTED') {
+                            return (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                                KYC: Rejected
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                              KYC: Pending
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1">
+                      <div>
+                        <span className="text-[10px] text-text-secondary block">Requested</span>
                         <span className="font-bold text-slate-900">
                           ₹{app.requestedAmount.toLocaleString('en-IN')}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-400 block">Tenure</span>
+                        <span className="text-[10px] text-text-secondary block">Tenure</span>
                         <span>{app.tenureMonths} Months</span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                    <div className="flex items-center justify-between text-xs text-text-secondary pt-1">
                       <div className="flex items-center space-x-1">
-                        <MapPin className="w-3 h-3 text-slate-400" />
-                        <span>{app.city}, {app.state}</span>
+                        <MapPin className="w-3 h-3 text-text-secondary" />
+                        <span>{app.state}</span>
                       </div>
                       <Button
                         size="sm"
                         onClick={() => navigate(`/admin/loans/${app.id}`)}
-                        className="h-7 text-xs bg-slate-900 hover:bg-slate-800 text-white"
+                        className="h-7 text-xs bg-surface hover:bg-surface-elevated text-text-primary"
                       >
                         Review
                       </Button>

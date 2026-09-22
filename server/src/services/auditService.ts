@@ -23,7 +23,7 @@ export const auditService = {
         data: {
           actorType: params.actorType,
           actorId: params.actorId || null,
-          actorName: params.actorName,
+          actorName: params.actorName || 'System Admin',
           action: params.action,
           entity: params.entity,
           entityId: params.entityId,

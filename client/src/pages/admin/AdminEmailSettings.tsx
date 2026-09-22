@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Send,
   Lock,
+  ExternalLink,
 } from 'lucide-react';
 
 export const AdminEmailSettings: React.FC = () => {
@@ -30,6 +31,7 @@ export const AdminEmailSettings: React.FC = () => {
   // Test Email
   const [testEmailTo, setTestEmailTo] = useState('');
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [testPreviewUrl, setTestPreviewUrl] = useState<string | null>(null);
 
   const fetchEmailSettings = async () => {
     setLoading(true);
@@ -93,11 +95,16 @@ export const AdminEmailSettings: React.FC = () => {
 
     setTesting(true);
     setTestResult(null);
+    setTestPreviewUrl(null);
     try {
       const res = await api.post(API_ENDPOINTS.SETTINGS.EMAIL_TEST, {
         toEmail: testEmailTo.trim(),
       });
-      setTestResult(res.data?.data?.message || res.data?.message || 'Test email dispatched!');
+      const data = res.data?.data || res.data;
+      setTestResult(data?.message || 'Test email dispatched!');
+      if (data?.previewUrl) {
+        setTestPreviewUrl(data.previewUrl);
+      }
     } catch (err: unknown) {
       setTestResult(`Error: ${err instanceof Error ? err.message : 'Failed to send test email'}`);
     } finally {
@@ -121,7 +128,7 @@ export const AdminEmailSettings: React.FC = () => {
       </div>
 
       {successMessage && (
-        <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-800 rounded flex items-center justify-between">
+        <div className="p-4 bg-emerald-50 border-l-4 border-success text-emerald-800 rounded flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span className="font-medium">{successMessage}</span>
@@ -258,7 +265,7 @@ export const AdminEmailSettings: React.FC = () => {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-semibold text-sm rounded-lg shadow-sm transition"
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-text-primary font-semibold text-sm rounded-lg shadow-sm transition"
                 >
                   {saving ? 'Saving...' : 'Save Email Settings'}
                 </button>
@@ -294,7 +301,7 @@ export const AdminEmailSettings: React.FC = () => {
               <button
                 type="submit"
                 disabled={testing || !testEmailTo}
-                className="w-full py-2.5 bg-gray-900 hover:bg-black disabled:bg-gray-400 text-white text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-gray-900 hover:bg-black disabled:bg-gray-400 text-text-primary text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-2"
               >
                 {testing ? (
                   <>
@@ -312,13 +319,26 @@ export const AdminEmailSettings: React.FC = () => {
 
             {testResult && (
               <div
-                className={`p-3 rounded-lg text-xs font-medium ${
+                className={`p-3.5 rounded-lg text-xs font-medium space-y-2 ${
                   testResult.startsWith('Error')
                     ? 'bg-red-50 text-red-700 border border-red-200'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                 }`}
               >
-                {testResult}
+                <div>{testResult}</div>
+                {testPreviewUrl && (
+                  <div className="pt-2 border-t border-emerald-200/60">
+                    <a
+                      href={testPreviewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 underline hover:no-underline"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Open Ethereal Sandbox Inbox
+                    </a>
+                  </div>
+                )}
               </div>
             )}
           </div>
