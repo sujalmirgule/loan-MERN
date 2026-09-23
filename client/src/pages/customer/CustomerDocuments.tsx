@@ -26,6 +26,8 @@ import { API_ENDPOINTS } from '@/api/endpoints';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -156,6 +158,14 @@ export const CustomerDocuments: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+
+  // Apply for Loan modal & submission state
+  const [applyModalOpen, setApplyModalOpen] = useState<boolean>(false);
+  const [applyAmount, setApplyAmount] = useState<number>(100000);
+  const [applyTenure, setApplyTenure] = useState<number>(12);
+  const [applyPurpose, setApplyPurpose] = useState<string>('Personal Financial Assistance');
+  const [isSubmittingLoan, setIsSubmittingLoan] = useState<boolean>(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
 
   // Document preview modal state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -305,6 +315,33 @@ export const CustomerDocuments: React.FC = () => {
     }
   };
 
+  const handleApplyLoanSubmit = async () => {
+    try {
+      setIsSubmittingLoan(true);
+      setApplyError(null);
+
+      const res = await apiClient.post(API_ENDPOINTS.LOANS.CUSTOMER_APPLY, {
+        amount: Number(applyAmount),
+        tenureMonths: Number(applyTenure),
+        purpose: applyPurpose.trim() || 'Personal Financial Assistance',
+      });
+
+      const appData = res.data?.data || res.data;
+      setSuccessMessage(
+        `Loan application #${appData.applicationNumber || 'Submitted'} submitted successfully! Forwarded to underwriting assessment desk.`
+      );
+      setApplyModalOpen(false);
+      fetchAllData();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Failed to submit loan application. Please verify that KYC is approved and all 4 documents are uploaded.';
+      setApplyError(msg);
+    } finally {
+      setIsSubmittingLoan(false);
+    }
+  };
+
   // Preview / Download helpers
   const handleViewPdf = async (url: string, title: string, downloadFn?: () => void) => {
     try {
@@ -400,6 +437,7 @@ export const CustomerDocuments: React.FC = () => {
   };
 
   // Filter existing loan documents
+  const activeLoan = loans.find((l) => !['REJECTED', 'CANCELLED', 'DRAFT'].includes(l.status));
   const approvedLoans = loans.filter((l) => l.status === 'APPROVED' || l.status === 'DISBURSED');
   const paidCharges = charges.filter((c) => c.status === 'PAID');
   const docFeeCharge = charges.find(
@@ -718,6 +756,122 @@ export const CustomerDocuments: React.FC = () => {
                   );
                 })}
               </div>
+
+              {/* ── LOAN APPLICATION SUBMISSION CTA (4/4 COMPLETE) ── */}
+              {activeLoan ? (
+                <Card className="border-2 border-emerald-300 bg-emerald-50/50 rounded-2xl shadow-xs overflow-hidden">
+                  <CardHeader className="p-4 sm:p-5 pb-3 border-b border-emerald-200 bg-white">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base font-bold text-[#0F172A]">
+                            Loan Application Submitted Successfully
+                          </CardTitle>
+                          <CardDescription className="text-xs text-[#64748B]">
+                            Application ID: <strong className="font-mono text-emerald-800">{activeLoan.applicationNumber}</strong> • Forwarded for Underwriting Review
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <div>
+                        <Badge className="bg-emerald-600 text-white font-bold text-xs px-3.5 py-1">
+                          {activeLoan.status.replace(/_/g, ' ')}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-4 sm:p-5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-white border border-emerald-200">
+                      <div>
+                        <span className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider block">
+                          Requested Loan Amount
+                        </span>
+                        <span className="text-2xl font-black text-[#0F172A] font-mono">
+                          ₹{activeLoan.requestedAmount.toLocaleString('en-IN')}
+                        </span>
+                        <span className="text-xs text-[#64748B] block mt-0.5">
+                          Tenure: <strong className="text-[#0F172A]">{activeLoan.tenureMonths} Months</strong>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => navigate('/customer/loans')}
+                          className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs h-10 px-5 rounded-xl shadow-md flex items-center gap-1.5"
+                        >
+                          <span>View My Loan</span>
+                          <ArrowRight className="w-4 h-4 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : uploadedLoanDocsCount >= 4 && isKycApproved ? (
+                <Card className="border-2 border-blue-400 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 rounded-2xl shadow-md overflow-hidden animate-in fade-in duration-300">
+                  <CardHeader className="p-5 pb-3 border-b border-blue-200/80 bg-white/80 backdrop-blur-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                          <FileSignature className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base font-bold text-[#0F172A]">
+                            All Mandatory Documents Uploaded (4/4)
+                          </CardTitle>
+                          <CardDescription className="text-xs text-[#475569]">
+                            KYC identity is approved and all required loan documents are ready for credit underwriting.
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <div>
+                        <Badge className="bg-emerald-600 text-white font-bold text-xs px-3 py-1 shadow-2xs">
+                          ✓ Ready for Application
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-white border border-blue-200 shadow-2xs">
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-bold text-[#0F172A]">Submit for Underwriting Assessment</h4>
+                        <p className="text-xs text-[#64748B]">
+                          Click the button below to submit your official loan application to our underwriting officers for review and sanctioning.
+                        </p>
+                      </div>
+                      <Button
+                        size="default"
+                        onClick={() => {
+                          setApplyError(null);
+                          setApplyModalOpen(true);
+                        }}
+                        className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-extrabold text-sm h-11 px-7 rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+                      >
+                        <span>Apply for Loan</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border border-[#D6E4F5] bg-[#F7FAFF] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-[#64748B] shrink-0" />
+                    <span className="text-[#64748B]">
+                      Upload all 4 mandatory loan documents ({uploadedLoanDocsCount}/4 uploaded) and complete KYC verification to unlock loan application submission.
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled
+                    className="bg-slate-200 text-slate-400 cursor-not-allowed text-xs font-bold h-8 px-4 rounded-xl"
+                  >
+                    Apply for Loan (Locked)
+                  </Button>
+                </Card>
+              )}
 
               {/* ── BEFORE-LOAN CHARGE: LOAN DOCUMENT UPLOAD FEE (ADMIN-CONTROLLED) ── */}
               {docFeeCharge && (
@@ -1613,6 +1767,112 @@ export const CustomerDocuments: React.FC = () => {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── APPLY FOR LOAN MODAL ── */}
+      <Dialog open={applyModalOpen} onOpenChange={setApplyModalOpen}>
+        <DialogContent className="max-w-lg rounded-3xl p-6 sm:p-7">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-[#0F172A] flex items-center gap-2">
+              <FileSignature className="w-5 h-5 text-[#2563EB]" />
+              <span>Submit Loan Application</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#64748B]">
+              Confirm your requested loan particulars for credit underwriting.
+            </DialogDescription>
+          </DialogHeader>
+
+          {applyError && (
+            <div className="p-3.5 rounded-xl bg-danger/10 border border-danger/30 text-danger text-xs flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{applyError}</span>
+            </div>
+          )}
+
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs font-bold text-[#0F172A]">Requested Loan Amount (₹)</Label>
+              <Input
+                type="number"
+                min={10000}
+                max={3000000}
+                step={5000}
+                value={applyAmount}
+                onChange={(e) => setApplyAmount(Number(e.target.value))}
+                className="text-sm font-mono mt-1 h-10 rounded-xl"
+                placeholder="e.g. 100000"
+              />
+              <span className="text-[11px] text-[#64748B] mt-0.5 block">
+                Amount: ₹{Number(applyAmount || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold text-[#0F172A]">Loan Tenure (Months)</Label>
+              <select
+                value={applyTenure}
+                onChange={(e) => setApplyTenure(Number(e.target.value))}
+                className="w-full text-xs h-10 rounded-xl border border-input bg-background px-3 py-2 mt-1 focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value={6}>6 Months (Short Term)</option>
+                <option value={12}>12 Months (1 Year)</option>
+                <option value={24}>24 Months (2 Years)</option>
+                <option value={36}>36 Months (3 Years)</option>
+                <option value={48}>48 Months (4 Years)</option>
+                <option value={60}>60 Months (5 Years)</option>
+              </select>
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold text-[#0F172A]">Purpose of Loan</Label>
+              <Input
+                type="text"
+                value={applyPurpose}
+                onChange={(e) => setApplyPurpose(e.target.value)}
+                className="text-xs mt-1 h-10 rounded-xl"
+                placeholder="e.g. Personal Financial Assistance / Emergency"
+              />
+            </div>
+
+            <div className="p-3 bg-[#F7FAFF] rounded-xl border border-[#D6E4F5] text-xs space-y-1">
+              <div className="flex items-center text-emerald-700 font-semibold gap-1.5 text-[11px]">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Identity KYC Verified & Approved</span>
+              </div>
+              <div className="flex items-center text-emerald-700 font-semibold gap-1.5 text-[11px]">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>All 4 Mandatory Documents Uploaded</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setApplyModalOpen(false)}
+              disabled={isSubmittingLoan}
+              className="rounded-xl text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleApplyLoanSubmit}
+              disabled={isSubmittingLoan || !applyAmount || applyAmount <= 0}
+              className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs h-10 px-6 rounded-xl shadow-md"
+            >
+              {isSubmittingLoan ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                  <span>Submitting...</span>
+                </>
+              ) : (
+                <span>Submit Loan Application</span>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

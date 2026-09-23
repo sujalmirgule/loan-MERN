@@ -56,9 +56,11 @@ model Customer {
   bankAccountType String?
   domainId        String?
   domain          Domain?   @relation(fields: [domainId], references: [id], onDelete: SetNull)
-  status          String    @default("ACTIVE") // ACTIVE, SUSPENDED, ARCHIVED
+  status          String    @default("ACTIVE") // ACTIVE, SUSPENDED, ARCHIVED, DEACTIVATED
   kycStatus       String    @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, REUPLOAD_REQUIRED
+  isActive        Boolean   @default(true)
   isDeleted       Boolean   @default(false)
+  deletedAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -352,19 +354,22 @@ model AuditLog {
   id            String    @id @default(uuid())
   actorType     String    // ADMIN, CUSTOMER, SYSTEM
   actorId       String?
-  actorName     String
-  action        String    // APPROVE_LOAN, MODIFY_AMOUNT, DISBURSE, etc.
+  actorName     String    @default("System Admin")
+  action        String    // APPROVE_LOAN, MODIFY_AMOUNT, DISBURSE, CUSTOMER_ACCOUNT_DEACTIVATED, etc.
   entity        String    // LoanApplication, Customer, Document, etc.
   entityId      String
   previousValue String?   // JSON stringified before state
   newValue      String?   // JSON stringified after state
   ipAddress     String?
   timestamp     DateTime  @default(now())
+  createdAt     DateTime  @default(now())
 
   @@index([entity])
   @@index([entityId])
   @@index([timestamp])
+  @@index([createdAt])
   @@index([actorId])
+  @@index([action])
 }
 
 // -------------------------------------------------------------
@@ -474,30 +479,43 @@ model SupportTicket {
 // 13. EMAIL SETTINGS (SMTP)
 // -------------------------------------------------------------
 model EmailSettings {
-  id              String   @id @default("default")
-  smtpHost        String   @default("")
-  smtpPort        Int      @default(587)
-  smtpUsername    String   @default("")
-  smtpPasswordEnc String   @default("")
-  fromName        String   @default("Loan Approve Financial Services")
-  fromEmail       String   @default("notifications@loanapprove.com")
-  encryption      String   @default("STARTTLS") // NONE, SSL, STARTTLS
-  updatedAt       DateTime @updatedAt
+  id              String    @id @default("default")
+  smtpHost        String    @default("")
+  smtpPort        Int       @default(587)
+  smtpUsername    String    @default("")
+  smtpPasswordEnc String    @default("")
+  fromName        String    @default("Loan Approve Financial Services")
+  fromEmail       String    @default("notifications@loanapprove.com")
+  replyToEmail    String    @default("")
+  encryption      String    @default("STARTTLS") // NONE, SSL, STARTTLS
+  enabled         Boolean   @default(true)
+  status          String    @default("NOT_CONFIGURED") // NOT_CONFIGURED, CONFIGURED, CONNECTED, CONNECTION_FAILED
+  lastTestedAt    DateTime?
+  lastError       String?
+  updatedAt       DateTime  @updatedAt
 }
 
 // -------------------------------------------------------------
 // 14. WHATSAPP SETTINGS
 // -------------------------------------------------------------
 model WhatsAppSettings {
-  id                String   @id @default("default")
-  provider          String   @default("META") // META, TWILIO, GUPSHUP
-  phoneNumber       String   @default("")
-  phoneNumberId     String   @default("")
-  businessAccountId String   @default("")
-  apiEndpoint       String   @default("")
-  accessTokenEnc    String   @default("")
-  enabled           Boolean  @default(false)
-  updatedAt         DateTime @updatedAt
+  id                String    @id @default("default")
+  provider          String    @default("WABRIDGE") // WABRIDGE, META, TWILIO, GUPSHUP
+  phoneNumber       String    @default("")
+  phoneNumberId     String    @default("")
+  businessAccountId String    @default("")
+  apiEndpoint       String    @default("")
+  apiBaseUrl        String    @default("")
+  sendEndpoint      String    @default("")
+  authType          String    @default("BEARER") // BEARER, API_KEY, CUSTOM_HEADER, NONE
+  apiKeyHeaderName  String    @default("x-api-key")
+  authHeaderPrefix  String    @default("Bearer")
+  accessTokenEnc    String    @default("")
+  enabled           Boolean   @default(false)
+  status            String    @default("NOT_CONFIGURED") // NOT_CONFIGURED, CONFIGURED, CONNECTED, CONNECTION_FAILED
+  lastTestedAt      DateTime?
+  lastError         String?
+  updatedAt         DateTime  @updatedAt
 }
 
 // -------------------------------------------------------------

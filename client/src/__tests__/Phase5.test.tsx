@@ -252,27 +252,18 @@ describe('Phase 5 Frontend Modules', () => {
     });
   });
 
-  it('renders Admin Email Settings with SMTP inputs', async () => {
+  it('renders Admin Email Settings with SMTP inputs and composer', async () => {
     render(<AdminEmailSettings />, { wrapper: createWrapper() });
 
-    expect(screen.getByText(/SMTP & Email Delivery Settings/i)).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue('smtp.sendgrid.net')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('587')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Send Test Email/i })).toBeInTheDocument();
-    });
+    expect(screen.getByText(/Customer Email Messaging/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /SMTP Configuration/i })).toBeInTheDocument();
   });
 
-  it('renders Admin WhatsApp Settings with provider selection', async () => {
+  it('renders Admin WhatsApp Settings with direct composer and provider selection', async () => {
     render(<AdminWhatsAppSettings />, { wrapper: createWrapper() });
 
-    expect(screen.getByText(/WhatsApp Business Gateway/i)).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue('+919999988888')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Dispatch Test Ping/i })).toBeInTheDocument();
-    });
+    expect(screen.getAllByText(/WhatsApp Messaging/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /Provider Settings/i })).toBeInTheDocument();
   });
 
   it('renders Admin Support Tickets page with queue', async () => {

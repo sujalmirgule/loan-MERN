@@ -179,11 +179,21 @@ export class SettingsController {
     }
   }
 
+  async testEmailConnection(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const result = await settingsService.testEmailConnection(req.user, req.ip);
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
   async sendTestEmail(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) throw new AppError(401, 'Unauthorized');
       const input = testEmailSchema.parse(req.body);
-      const result = await settingsService.sendTestEmail(input.toEmail, req.user, req.ip);
+      const result = await settingsService.sendTestEmail(input, req.user, req.ip);
       res.status(200).json(result);
     } catch (err) {
       next(err);
@@ -210,11 +220,21 @@ export class SettingsController {
     }
   }
 
+  async testWhatsAppConnection(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const result = await settingsService.testWhatsAppConnection(req.user, req.ip);
+      res.status(200).json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
   async sendTestWhatsApp(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) throw new AppError(401, 'Unauthorized');
       const input = testWhatsAppSchema.parse(req.body);
-      const result = await settingsService.sendTestWhatsApp(input.toNumber, req.user, req.ip);
+      const result = await settingsService.sendTestWhatsApp(input, req.user, req.ip);
       res.status(200).json(result);
     } catch (err) {
       next(err);

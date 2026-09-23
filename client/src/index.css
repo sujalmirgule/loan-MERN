@@ -126,17 +126,73 @@
     @apply bg-background text-text-primary;
     font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     color: var(--text-primary);
+    font-weight: 450;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
-  h1, h2, h3, h4, h5, h6 {
+  h1 {
+    font-family: 'Plus Jakarta Sans', 'Outfit', sans-serif;
+    letter-spacing: -0.025em;
+    color: var(--text-primary);
+    font-weight: 700;
+  }
+  h2 {
     font-family: 'Plus Jakarta Sans', 'Outfit', sans-serif;
     letter-spacing: -0.02em;
     color: var(--text-primary);
     font-weight: 700;
   }
+  h3 {
+    font-family: 'Plus Jakarta Sans', 'Outfit', sans-serif;
+    letter-spacing: -0.015em;
+    color: var(--text-primary);
+    font-weight: 650;
+  }
+  h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', 'Outfit', sans-serif;
+    color: var(--text-primary);
+    font-weight: 600;
+  }
   label {
     color: #1E293B;
     font-weight: 600;
+    letter-spacing: -0.01em;
   }
+  input, select, textarea {
+    font-weight: 500;
+    color: #0F172A;
+  }
+  input::placeholder, textarea::placeholder {
+    font-weight: 400;
+    color: #64748B;
+  }
+  th {
+    font-weight: 650;
+    color: #334155;
+  }
+  strong, b {
+    font-weight: 650;
+  }
+}
+
+/* Typography Hierarchy Utilities */
+.font-financial {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.font-metric {
+  font-weight: 700;
+}
+.font-label {
+  font-weight: 600;
+}
+.font-primary-val {
+  font-weight: 600;
+}
+.font-secondary-val {
+  font-weight: 500;
 }
 
 /* Premium FinTech Utilities */

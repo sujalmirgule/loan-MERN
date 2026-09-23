@@ -140,6 +140,54 @@ export interface PaginatedAdminLoansResponse {
     total: number;
     totalPages: number;
   };
+  counts?: {
+    all: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  };
+}
+
+export interface BulkWhatsAppResultItem {
+  applicationId: string;
+  applicationNumber: string;
+  customerName: string;
+  recipient: string;
+  success: boolean;
+  status: string;
+  error?: string;
+}
+
+export interface BulkWhatsAppResponse {
+  success: boolean;
+  message: string;
+  data: {
+    total: number;
+    sentCount: number;
+    failedCount: number;
+    results: BulkWhatsAppResultItem[];
+  };
+}
+
+export interface BulkEmailResultItem {
+  applicationId: string;
+  applicationNumber: string;
+  customerName: string;
+  recipient: string;
+  success: boolean;
+  status: string;
+  error?: string;
+}
+
+export interface BulkEmailResponse {
+  success: boolean;
+  message: string;
+  data: {
+    total: number;
+    sentCount: number;
+    failedCount: number;
+    results: BulkEmailResultItem[];
+  };
 }
 
 export const loanApi = {
@@ -303,4 +351,30 @@ export const loanApi = {
       }
     );
   },
+
+  async sendBulkWhatsAppApplications(data: {
+    applicationIds: string[];
+    message?: string;
+    templateName?: string;
+  }): Promise<BulkWhatsAppResponse> {
+    return apiClient<BulkWhatsAppResponse>(API_ENDPOINTS.COMMUNICATION.SEND_WHATSAPP_BULK_APPLICATIONS, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      tokenType: 'admin',
+    });
+  },
+
+  async sendBulkEmailApplications(data: {
+    applicationIds: string[];
+    subject?: string;
+    message?: string;
+    templateName?: string;
+  }): Promise<BulkEmailResponse> {
+    return apiClient<BulkEmailResponse>(API_ENDPOINTS.COMMUNICATION.SEND_EMAIL_BULK_APPLICATIONS, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      tokenType: 'admin',
+    });
+  },
 };
+

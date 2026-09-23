@@ -128,6 +128,36 @@ describe('UPI Payment, UTR Flow, Underwriting Lifecycle & IDOR Security Suite', 
       data: { kycStatus: 'APPROVED' },
     });
 
+    // Upload 4 mandatory documents for Customer 1 and Customer 2
+    for (const dt of ['PAN', 'BANK_STATEMENT', 'INCOME_PROOF', 'OTHER']) {
+      await prisma.loanDocument.create({
+        data: {
+          customerId: customerId1,
+          documentType: dt,
+          fileName: `${dt.toLowerCase()}_1.pdf`,
+          filePath: `uploads/${dt.toLowerCase()}_1.pdf`,
+          fileUrl: `/uploads/${dt.toLowerCase()}_1.pdf`,
+          mimeType: 'application/pdf',
+          fileSize: 1024,
+          status: 'PENDING',
+          isCurrentVersion: true,
+        },
+      });
+      await prisma.loanDocument.create({
+        data: {
+          customerId: customerId2,
+          documentType: dt,
+          fileName: `${dt.toLowerCase()}_2.pdf`,
+          filePath: `uploads/${dt.toLowerCase()}_2.pdf`,
+          fileUrl: `/uploads/${dt.toLowerCase()}_2.pdf`,
+          mimeType: 'application/pdf',
+          fileSize: 1024,
+          status: 'PENDING',
+          isCurrentVersion: true,
+        },
+      });
+    }
+
     // Create loan for Customer 1
     const loan1Res = await request(app)
       .post('/api/customer/loan-applications')

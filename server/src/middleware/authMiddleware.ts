@@ -44,15 +44,15 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     if (payload.role === 'CUSTOMER') {
       const customer = await prisma.customer.findUnique({
         where: { id: payload.sub },
-        select: { id: true, fullName: true, email: true, mobile: true, status: true, isDeleted: true },
+        select: { id: true, fullName: true, email: true, mobile: true, status: true, isDeleted: true, isActive: true },
       });
 
       if (!customer || customer.isDeleted) {
         throw new AppError(401, 'Customer account does not exist or has been deleted');
       }
 
-      if (customer.status !== 'ACTIVE') {
-        throw new AppError(403, 'Customer account is suspended. Please contact customer support.');
+      if (customer.status !== 'ACTIVE' || customer.isActive === false) {
+        throw new AppError(403, 'Customer account is deactivated or suspended. Please contact customer support.');
       }
 
       req.user = {

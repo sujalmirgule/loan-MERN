@@ -234,20 +234,6 @@ describe('Complete Sequential Workflow Verification — 14-Step Real World Flow'
     expect(docsRes.status).toBe(200);
     const currentKyc = docsRes.body.data?.customer?.kycStatus || docsRes.body.data?.kycStatus;
     expect(currentKyc).toBe('APPROVED');
-
-    // Customer submits a loan application to anchor documents and future processing fee
-    const loanRes = await request(app)
-      .post('/api/customer/loan-applications')
-      .set('Authorization', `Bearer ${customerToken}`)
-      .send({
-        loanType: 'PERSONAL',
-        amount: 200000,
-        tenureMonths: 24,
-        purpose: 'Home Renovation',
-      });
-    expect(loanRes.status).toBe(201);
-    testLoanId = loanRes.body.data.id;
-    testApplicationNumber = loanRes.body.data.applicationNumber;
   });
 
   it('Step 7: Customer uploads PAN -> PAN = Uploaded', async () => {
@@ -272,7 +258,7 @@ describe('Complete Sequential Workflow Verification — 14-Step Real World Flow'
     expect(bankRes.body.data.document.documentType).toBe('BANK_STATEMENT');
   });
 
-  it('Step 9: Customer uploads Income Proof -> Processing fee is activated upon 3 mandatory loan docs', async () => {
+  it('Step 9: Customer uploads Income Proof and Other Documents -> Complete 4/4 documents', async () => {
     const incRes = await request(app)
       .post('/api/customer/documents')
       .set('Authorization', `Bearer ${customerToken}`)
@@ -281,6 +267,28 @@ describe('Complete Sequential Workflow Verification — 14-Step Real World Flow'
 
     expect(incRes.status).toBe(201);
     expect(incRes.body.data.document.documentType).toBe('INCOME_PROOF');
+
+    const otherRes = await request(app)
+      .post('/api/customer/documents')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .attach('file', Buffer.from('mock other proof content'), 'other_doc.pdf')
+      .field('documentType', 'OTHER');
+
+    expect(otherRes.status).toBe(201);
+
+    // Customer submits loan application after 4/4 documents complete
+    const loanRes = await request(app)
+      .post('/api/customer/loan-applications')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({
+        loanType: 'PERSONAL',
+        amount: 200000,
+        tenureMonths: 24,
+        purpose: 'Home Renovation',
+      });
+    expect(loanRes.status).toBe(201);
+    testLoanId = loanRes.body.data.id;
+    testApplicationNumber = loanRes.body.data.applicationNumber;
   });
 
   it('Step 10: Complete required documents -> Processing Fee becomes ACTIVE and visible to customer', async () => {

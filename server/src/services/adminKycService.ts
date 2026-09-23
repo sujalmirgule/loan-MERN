@@ -26,6 +26,43 @@ export const adminKycService = {
       const s = filters.status.toUpperCase();
       if (s === 'PENDING_VERIFICATION') {
         where.kycStatus = { in: ['PENDING', 'UNDER_REVIEW'] };
+        where.OR = [
+          {
+            charges: {
+              some: {
+                AND: [
+                  { OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }] },
+                  {
+                    OR: [
+                      { status: 'PAID' },
+                      { NOT: { transactionRef: null } },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          {
+            payments: {
+              some: {
+                status: { in: ['PAID', 'SUCCESS', 'UNDER_VERIFICATION'] },
+                OR: [
+                  { paymentType: 'KYC_CHARGES' },
+                  { notes: { contains: 'KYC' } },
+                ],
+              },
+            },
+          },
+        ];
+      } else if (s === 'PAYMENT_PENDING') {
+        where.kycStatus = { in: ['PENDING', 'UNDER_REVIEW'] };
+        where.charges = {
+          some: {
+            OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }],
+            status: { not: 'PAID' },
+            transactionRef: null,
+          },
+        };
       } else if (s === 'PENDING_APPROVAL') {
         where.kycStatus = { in: ['PENDING', 'UNDER_REVIEW'] };
       } else if (s === 'VERIFIED') {
@@ -94,12 +131,38 @@ export const adminKycService = {
             where: {
               OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }],
             },
+            orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
             select: {
               id: true,
               name: true,
               amount: true,
               status: true,
               transactionRef: true,
+              paidAt: true,
+              paymentId: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
+          payments: {
+            where: {
+              OR: [
+                { paymentType: 'KYC_CHARGES' },
+                { notes: { contains: 'KYC' } },
+                { status: { in: ['UNDER_VERIFICATION', 'PAID', 'SUCCESS'] } },
+              ],
+            },
+            orderBy: [{ paymentDate: 'desc' }],
+            select: {
+              id: true,
+              amount: true,
+              status: true,
+              transactionRef: true,
+              paymentType: true,
+              notes: true,
+              verifiedAt: true,
+              verifiedBy: true,
+              paymentDate: true,
             },
           },
           documents: {
@@ -118,7 +181,38 @@ export const adminKycService = {
       }),
       prisma.customer.count({ where: { isDeleted: false } }),
       prisma.customer.count({
-        where: { isDeleted: false, kycStatus: { in: ['PENDING', 'UNDER_REVIEW'] } },
+        where: {
+          isDeleted: false,
+          kycStatus: { in: ['PENDING', 'UNDER_REVIEW'] },
+          OR: [
+            {
+              charges: {
+                some: {
+                  AND: [
+                    { OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }] },
+                    {
+                      OR: [
+                        { status: 'PAID' },
+                        { NOT: { transactionRef: null } },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              payments: {
+                some: {
+                  status: { in: ['PAID', 'SUCCESS', 'UNDER_VERIFICATION'] },
+                  OR: [
+                    { paymentType: 'KYC_CHARGES' },
+                    { notes: { contains: 'KYC' } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
       }),
       prisma.customer.count({
         where: { isDeleted: false, kycStatus: { in: ['PENDING', 'UNDER_REVIEW'] } },
@@ -140,6 +234,16 @@ export const adminKycService = {
             some: {
               OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }],
               status: { not: 'PAID' },
+              transactionRef: null,
+            },
+          },
+          payments: {
+            none: {
+              status: { in: ['PAID', 'VERIFIED', 'UNDER_VERIFICATION'] },
+              OR: [
+                { paymentType: 'KYC_CHARGES' },
+                { notes: { contains: 'KYC' } },
+              ],
             },
           },
         },
@@ -165,16 +269,41 @@ export const adminKycService = {
       const kycType = hasAadhaar ? 'Aadhaar (Front + Back)' : 'Standard KYC';
 
       const latestLoan = c.loans[0] || null;
-      const kycCharge = c.charges?.[0] || null;
-      const isKycFeePaid = kycCharge?.status === 'PAID';
-      const utr = kycCharge?.transactionRef?.trim() || null;
+
+      // 1. Resolve KYC Charge: Prioritize PAID, then one with transactionRef, then most recent
+      const paidCharge = c.charges.find((ch) => ch.status === 'PAID');
+      const chargeWithUtr = c.charges.find((ch) => ch.transactionRef && ch.transactionRef.trim().length > 0);
+      const kycCharge = paidCharge || chargeWithUtr || c.charges[0] || null;
+
+      // 2. Resolve KYC Payment: Prioritize PAID/VERIFIED, then UNDER_VERIFICATION, then one with transactionRef
+      const paidPayment = c.payments.find((p) => p.status === 'PAID' || p.status === 'VERIFIED');
+      const paymentWithUtr = c.payments.find((p) => p.transactionRef && p.transactionRef.trim().length > 0);
+      const kycPayment = paidPayment || paymentWithUtr || c.payments[0] || null;
+
+      // 3. Resolve Effective UTR & Payment Status
+      const utr = (kycCharge?.transactionRef?.trim() || kycPayment?.transactionRef?.trim() || null);
       const hasUtr = Boolean(utr && utr.length > 0);
+      const isKycFeePaid = Boolean(
+        kycCharge?.status === 'PAID' ||
+        kycPayment?.status === 'PAID' ||
+        kycPayment?.status === 'VERIFIED'
+      );
+
+      // Payment Status semantics:
+      // 'NOT_SUBMITTED' | 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED'
+      const paymentStatus = isKycFeePaid
+        ? 'VERIFIED'
+        : hasUtr
+        ? 'PENDING_VERIFICATION'
+        : (kycCharge?.status === 'FAILED' || kycCharge?.status === 'REJECTED' || kycPayment?.status === 'REJECTED')
+        ? 'REJECTED'
+        : 'NOT_SUBMITTED';
 
       const kycPaymentStatus = isKycFeePaid
         ? 'PAID'
         : hasUtr
         ? 'UNDER_VERIFICATION'
-        : kycCharge?.status === 'FAILED' || kycCharge?.status === 'REJECTED'
+        : (kycCharge?.status === 'FAILED' || kycCharge?.status === 'REJECTED' || kycPayment?.status === 'REJECTED')
         ? 'REJECTED'
         : 'NOT_PAID';
 
@@ -198,11 +327,14 @@ export const adminKycService = {
         isKycFeePaid,
         hasUtr,
         utr,
+        utrSubmitted: hasUtr,
+        paymentStatus,
         kycPaymentStatus,
         utrStatus,
-        kycChargeStatus: kycCharge?.status || 'PENDING',
-        kycChargeAmount: kycCharge?.amount || 500,
+        kycChargeStatus: isKycFeePaid ? 'PAID' : (kycCharge?.status || 'PENDING'),
+        kycChargeAmount: kycCharge?.amount || kycPayment?.amount || 500,
         kycChargeId: kycCharge?.id || null,
+        kycPaymentId: kycPayment?.id || kycCharge?.paymentId || null,
         kycType,
         applicationId: latestLoan?.applicationNumber || 'N/A',
         loanId: latestLoan?.id || null,
@@ -260,6 +392,7 @@ export const adminKycService = {
           where: {
             OR: [{ name: { contains: 'KYC' } }, { remark: { contains: 'KYC' } }],
           },
+          orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
           select: {
             id: true,
             name: true,
@@ -268,6 +401,29 @@ export const adminKycService = {
             transactionRef: true,
             paidAt: true,
             paymentId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        payments: {
+          where: {
+            OR: [
+              { paymentType: 'KYC_CHARGES' },
+              { notes: { contains: 'KYC' } },
+              { status: { in: ['UNDER_VERIFICATION', 'PAID', 'SUCCESS'] } },
+            ],
+          },
+          orderBy: [{ paymentDate: 'desc' }],
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            transactionRef: true,
+            paymentType: true,
+            notes: true,
+            verifiedAt: true,
+            verifiedBy: true,
+            paymentDate: true,
           },
         },
       },
@@ -283,10 +439,29 @@ export const adminKycService = {
     const activeDocuments = customer.documents.filter((d) => d.isCurrentVersion && isKycDoc(d));
     const documentHistory = customer.documents.filter((d) => !d.isCurrentVersion && isKycDoc(d));
 
-    const kycCharge = customer.charges?.[0] || null;
-    const utr = kycCharge?.transactionRef?.trim() || null;
+    // 1. Resolve KYC Charge: Prioritize PAID, then one with transactionRef, then most recent
+    const paidCharge = customer.charges.find((ch) => ch.status === 'PAID');
+    const chargeWithUtr = customer.charges.find((ch) => ch.transactionRef && ch.transactionRef.trim().length > 0);
+    const kycCharge = paidCharge || chargeWithUtr || customer.charges[0] || null;
+
+    // 2. Resolve KYC Payment: Prioritize PAID/VERIFIED, then UNDER_VERIFICATION, then one with transactionRef
+    const paidPayment = customer.payments.find((p) => p.status === 'PAID' || p.status === 'VERIFIED');
+    const paymentWithUtr = customer.payments.find((p) => p.transactionRef && p.transactionRef.trim().length > 0);
+    const kycPayment = paidPayment || paymentWithUtr || customer.payments[0] || null;
+
+    const utr = (kycCharge?.transactionRef?.trim() || kycPayment?.transactionRef?.trim() || null);
     const hasUtr = Boolean(utr && utr.length > 0);
-    const isKycFeePaid = kycCharge?.status === 'PAID';
+    const isKycFeePaid = Boolean(
+      kycCharge?.status === 'PAID' ||
+      kycPayment?.status === 'PAID' ||
+      kycPayment?.status === 'VERIFIED'
+    );
+
+    const paymentStatus = isKycFeePaid
+      ? 'PAID / Verified'
+      : hasUtr
+      ? 'Pending Verification'
+      : 'Payment Required';
 
     return {
       customer: {
@@ -306,16 +481,13 @@ export const adminKycService = {
       },
       kycPayment: {
         chargeId: kycCharge?.id || null,
-        amount: kycCharge?.amount || 500,
+        paymentId: kycPayment?.id || kycCharge?.paymentId || null,
+        amount: kycCharge?.amount || kycPayment?.amount || 500,
         utr: utr || 'Not Provided',
         hasUtr,
-        status: kycCharge?.status || 'PENDING',
+        status: isKycFeePaid ? 'PAID' : (kycCharge?.status || kycPayment?.status || 'PENDING'),
         isPaid: isKycFeePaid,
-        paymentStatus: isKycFeePaid
-          ? 'PAID / Verified'
-          : hasUtr
-          ? 'Pending Verification'
-          : 'Payment Required',
+        paymentStatus,
       },
       documents: activeDocuments.map((d) => ({
         id: d.id,
@@ -467,21 +639,10 @@ export const adminKycService = {
       });
 
       if (allRequiredApproved) {
-        // STRICT PAYMENT GATE: Admin/System can ONLY approve KYC if KYC fee is PAID
-        const kycCharge = await prisma.charge.findFirst({
-          where: {
-            customerId,
-            OR: [
-              { name: { contains: 'KYC' } },
-              { remark: { contains: 'KYC' } },
-            ],
-          },
-        });
-
-        if (kycCharge && kycCharge.status === 'PAID') {
-          targetKycStatus = 'APPROVED';
+        // Strict gate: If already approved, remain APPROVED. Otherwise remain UNDER_REVIEW awaiting explicit admin approval
+        if (customer.kycStatus === 'APPROVED' || customer.kycStatus === 'VERIFIED') {
+          targetKycStatus = customer.kycStatus;
         } else {
-          // Documents approved, but payment is still pending. Status remains UNDER_REVIEW
           targetKycStatus = 'UNDER_REVIEW';
         }
       } else if (docs.length > 0) {
@@ -527,6 +688,7 @@ export const adminKycService = {
           { remark: { contains: 'KYC' } },
         ],
       },
+      orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
     });
 
     if (!existing) {
@@ -552,6 +714,17 @@ export const adminKycService = {
           sentAt: new Date(),
         },
       });
+    } else if (!existing.loanId) {
+      const latestLoan = await prisma.loanApplication.findFirst({
+        where: { customerId },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (latestLoan) {
+        await prisma.charge.update({
+          where: { id: existing.id },
+          data: { loanId: latestLoan.id },
+        });
+      }
     }
   },
 
@@ -665,12 +838,40 @@ export const adminKycService = {
       let kycCharge = await prisma.charge.findFirst({
         where: {
           customerId,
+          status: 'PAID',
           OR: [
             { name: { contains: 'KYC' } },
             { remark: { contains: 'KYC' } },
           ],
         },
       });
+
+      if (!kycCharge) {
+        kycCharge = await prisma.charge.findFirst({
+          where: {
+            customerId,
+            transactionRef: { not: null },
+            OR: [
+              { name: { contains: 'KYC' } },
+              { remark: { contains: 'KYC' } },
+            ],
+          },
+          orderBy: { updatedAt: 'desc' },
+        });
+      }
+
+      if (!kycCharge) {
+        kycCharge = await prisma.charge.findFirst({
+          where: {
+            customerId,
+            OR: [
+              { name: { contains: 'KYC' } },
+              { remark: { contains: 'KYC' } },
+            ],
+          },
+          orderBy: { updatedAt: 'desc' },
+        });
+      }
 
       if (!kycCharge) {
         await this.ensureKycChargeActivated(customerId);
@@ -682,11 +883,36 @@ export const adminKycService = {
               { remark: { contains: 'KYC' } },
             ],
           },
+          orderBy: { updatedAt: 'desc' },
         });
       }
 
       if (!kycCharge) {
         throw new AppError(400, 'KYC Verification Fee record not found.');
+      }
+
+      // If charge does not have UTR, check if payment record has it
+      if (!kycCharge.transactionRef) {
+        const kycPayment = await prisma.payment.findFirst({
+          where: {
+            customerId,
+            transactionRef: { not: '' },
+            OR: [
+              { paymentType: 'KYC_CHARGES' },
+              { notes: { contains: 'KYC' } },
+            ],
+          },
+          orderBy: { paymentDate: 'desc' },
+        });
+        if (kycPayment?.transactionRef) {
+          kycCharge = await prisma.charge.update({
+            where: { id: kycCharge.id },
+            data: {
+              transactionRef: kycPayment.transactionRef,
+              paymentId: kycPayment.id,
+            },
+          });
+        }
       }
 
       // 3. Payment / UTR verification

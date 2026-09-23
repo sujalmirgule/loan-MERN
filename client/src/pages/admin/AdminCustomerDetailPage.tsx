@@ -1,11 +1,22 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
+import { adminService } from '@/services/adminService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   ExternalLink,
   AlertCircle,
@@ -16,6 +27,10 @@ import {
   User,
   Clock,
   ArrowLeft,
+  UserX,
+  UserCheck,
+  ShieldAlert,
+  CheckCircle2,
 } from 'lucide-react';
 
 import { SpecificChargesSection } from '@/components/admin/SpecificChargesSection';
@@ -44,6 +59,8 @@ interface Customer360Data {
     bankAccountType?: string;
     kycStatus: string;
     status: string;
+    isActive?: boolean;
+    deletedAt?: string | null;
     pendingSince?: string | null;
     createdAt: string;
     updatedAt?: string;
@@ -123,7 +140,16 @@ interface Customer360Data {
 
 export const AdminCustomerDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'KYC' | 'DOCS' | 'PAYMENTS' | 'EMI' | 'CHARGES' | 'TIMELINE'>('OVERVIEW');
+
+  // Deactivation / Reactivation modal state
+  const [deactivateModalOpen, setDeactivateModalOpen] = useState(false);
+  const [reactivateModalOpen, setReactivateModalOpen] = useState(false);
+  const [deactivateReason, setDeactivateReason] = useState('');
+  const [reactivateReason, setReactivateReason] = useState('');
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const { data, isLoading, isError } = useQuery<Customer360Data>({
     queryKey: ['admin-customer-detail', id],
@@ -135,6 +161,52 @@ export const AdminCustomerDetailPage: React.FC = () => {
     enabled: Boolean(id),
     refetchInterval: 1500,
   });
+
+  const handleDeactivate = async () => {
+    if (!id) return;
+    setIsProcessingAction(true);
+    setActionFeedback(null);
+    try {
+      await adminService.deactivateCustomer(id, deactivateReason);
+      setActionFeedback({
+        type: 'success',
+        message: 'Customer account deactivated successfully. Login is disabled while all historical records remain preserved.',
+      });
+      setDeactivateModalOpen(false);
+      setDeactivateReason('');
+      queryClient.invalidateQueries({ queryKey: ['admin-customer-detail', id] });
+    } catch (err: any) {
+      setActionFeedback({
+        type: 'error',
+        message: err.response?.data?.message || 'Failed to deactivate customer account.',
+      });
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (!id) return;
+    setIsProcessingAction(true);
+    setActionFeedback(null);
+    try {
+      await adminService.reactivateCustomer(id, reactivateReason);
+      setActionFeedback({
+        type: 'success',
+        message: 'Customer account reactivated successfully. Full portal access has been restored.',
+      });
+      setReactivateModalOpen(false);
+      setReactivateReason('');
+      queryClient.invalidateQueries({ queryKey: ['admin-customer-detail', id] });
+    } catch (err: any) {
+      setActionFeedback({
+        type: 'error',
+        message: err.response?.data?.message || 'Failed to reactivate customer account.',
+      });
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -161,6 +233,7 @@ export const AdminCustomerDetailPage: React.FC = () => {
 
   const { customer, documents, loans, payments, timeline } = data;
   const latestLoan = loans[0];
+  const isDeactivated = customer.status === 'DEACTIVATED' || customer.isActive === false;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -178,6 +251,53 @@ export const AdminCustomerDetailPage: React.FC = () => {
         <span className="text-xs font-semibold text-[#64748B]">Customer 360 Profile</span>
       </div>
 
+      {/* Action feedback banner */}
+      {actionFeedback && (
+        <div
+          className={`p-4 rounded-xl border flex items-center justify-between gap-3 text-xs font-semibold ${
+            actionFeedback.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {actionFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{actionFeedback.message}</span>
+          </div>
+          <button
+            onClick={() => setActionFeedback(null)}
+            className="text-slate-400 hover:text-slate-700 font-bold"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Deactivation Status Alert Banner if deactivated */}
+      {isDeactivated && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3 shadow-xs">
+          <ShieldAlert className="w-5 h-5 text-rose-600 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wider">Account Deactivated</h4>
+            <p className="text-xs text-rose-700 mt-0.5 font-medium leading-relaxed">
+              This customer account has been soft-deactivated. Customer login is blocked and active messaging is disabled. All historical loans, KYC verifications, payment receipts, and audit trails remain 100% preserved for regulatory compliance.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => setReactivateModalOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-xs shrink-0 flex items-center gap-1.5"
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            Reactivate Account
+          </Button>
+        </div>
+      )}
+
       {/* Screen 8 Top Header & Profile Banner */}
       <div className="bg-white border border-[#D6E4F5] rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-4">
@@ -190,19 +310,24 @@ export const AdminCustomerDetailPage: React.FC = () => {
               <Badge className={customer.kycStatus === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 font-bold' : 'bg-amber-50 text-amber-700 border-amber-200 font-bold'}>
                 KYC {customer.kycStatus}
               </Badge>
-              <Badge variant="outline" className="text-xs font-semibold text-slate-700 border-[#D6E4F5]">
-                {customer.status}
-              </Badge>
+              {isDeactivated ? (
+                <Badge className="bg-rose-50 text-rose-700 border-rose-200 font-bold text-xs">
+                  DEACTIVATED
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-xs font-semibold text-slate-700 border-[#D6E4F5]">
+                  {customer.status}
+                </Badge>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#64748B] mt-1">
-              <span>Mobile: <strong className="font-mono text-[#0F172A]">+91 {customer.mobile}</strong></span>
-              <span>Email: <strong className="text-[#0F172A]">{customer.email}</strong></span>
-              <span>PAN: <strong className="font-mono text-[#0F172A]">{customer.panMasked || 'XXXXX0000X'}</strong></span>
-              <span>Aadhaar: <strong className="font-mono text-[#0F172A]">{customer.aadhaarMasked}</strong></span>
+              <span>Mobile: <strong className="font-mono text-[#0F172A] font-semibold">+91 {customer.mobile}</strong></span>
+              <span>Email: <strong className="text-[#0F172A] font-semibold">{customer.email}</strong></span>
+              <span>PAN: <strong className="font-mono text-[#0F172A] font-semibold">{customer.panMasked || 'XXXXX0000X'}</strong></span>
+              <span>Aadhaar: <strong className="font-mono text-[#0F172A] font-semibold">{customer.aadhaarMasked}</strong></span>
             </div>
           </div>
         </div>
-
 
         {/* Action Buttons for Screen 8 */}
         <div className="flex flex-wrap items-center gap-2.5">
@@ -222,6 +347,29 @@ export const AdminCustomerDetailPage: React.FC = () => {
               </Link>
             </>
           )}
+
+          {isDeactivated ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setReactivateModalOpen(true)}
+              className="text-xs h-11 px-4 border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold rounded-xl shadow-xs flex items-center gap-1.5"
+            >
+              <UserCheck className="w-4 h-4" />
+              Reactivate Account
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setDeactivateModalOpen(true)}
+              className="text-xs h-11 px-4 border-rose-200 text-rose-700 bg-rose-50/50 hover:bg-rose-100 font-bold rounded-xl shadow-xs flex items-center gap-1.5"
+            >
+              <UserX className="w-4 h-4 text-rose-600" />
+              Deactivate
+            </Button>
+          )}
+
           <Link to="/admin/customers/new">
             <Button size="sm" className="text-xs h-11 px-5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5">
               + New Loan
@@ -587,6 +735,119 @@ export const AdminCustomerDetailPage: React.FC = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Deactivate Account Confirmation Modal */}
+      <Dialog open={deactivateModalOpen} onOpenChange={setDeactivateModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700">
+              <UserX className="w-5 h-5 text-rose-600" />
+              Deactivate Customer Account
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Deactivating <strong className="text-slate-900">{customer.fullName}</strong> will immediately revoke customer portal access and block any new applications or payments.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1 font-medium">
+              <p className="font-bold flex items-center gap-1.5 text-amber-900">
+                <ShieldAlert className="w-4 h-4 text-amber-700" />
+                Audit & Compliance Preservation
+              </p>
+              <p className="text-[11px] text-amber-800">
+                All historical loans ({loans.length}), KYC documents ({documents.length}), verified payments ({payments.length}), charges, and timeline logs are permanently preserved.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="deactivate-detail-reason" className="text-xs font-semibold text-slate-700">
+                Reason for Deactivation (Optional)
+              </Label>
+              <Textarea
+                id="deactivate-detail-reason"
+                rows={3}
+                placeholder="e.g., Requested by customer, Suspicious activity detected, Loan settlement completed..."
+                value={deactivateReason}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDeactivateReason(e.target.value)}
+                className="text-xs rounded-xl resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeactivateModalOpen(false)}
+              disabled={isProcessingAction}
+              className="text-xs font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeactivate}
+              disabled={isProcessingAction}
+              className="text-xs font-bold gap-1.5 bg-rose-600 hover:bg-rose-700"
+            >
+              {isProcessingAction ? 'Deactivating...' : 'Confirm Deactivation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reactivate Account Confirmation Modal */}
+      <Dialog open={reactivateModalOpen} onOpenChange={setReactivateModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-700">
+              <UserCheck className="w-5 h-5 text-emerald-600" />
+              Reactivate Customer Account
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Reactivate <strong className="text-slate-900">{customer.fullName}</strong> to restore customer portal login and enable notifications.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="reactivate-detail-reason" className="text-xs font-semibold text-slate-700">
+                Reason for Reactivation (Optional)
+              </Label>
+              <Textarea
+                id="reactivate-detail-reason"
+                rows={3}
+                placeholder="e.g., Identity re-verified, Verification cleared, Customer requested unblocking..."
+                value={reactivateReason}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReactivateReason(e.target.value)}
+                className="text-xs rounded-xl resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReactivateModalOpen(false)}
+              disabled={isProcessingAction}
+              className="text-xs font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleReactivate}
+              disabled={isProcessingAction}
+              className="text-xs font-bold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {isProcessingAction ? 'Reactivating...' : 'Confirm Reactivation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

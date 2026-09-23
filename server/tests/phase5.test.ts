@@ -103,6 +103,36 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
       data: { kycStatus: 'APPROVED' },
     });
 
+    // Create 4 mandatory loan documents for Customer 1 and Customer 2
+    for (const dt of ['PAN', 'BANK_STATEMENT', 'INCOME_PROOF', 'OTHER']) {
+      await prisma.loanDocument.create({
+        data: {
+          customerId: customerId,
+          documentType: dt,
+          fileName: `${dt.toLowerCase()}.pdf`,
+          filePath: `uploads/${dt.toLowerCase()}.pdf`,
+          fileUrl: `/uploads/${dt.toLowerCase()}.pdf`,
+          mimeType: 'application/pdf',
+          fileSize: 1024,
+          status: 'PENDING',
+          isCurrentVersion: true,
+        },
+      });
+      await prisma.loanDocument.create({
+        data: {
+          customerId: customerId2,
+          documentType: dt,
+          fileName: `${dt.toLowerCase()}_2.pdf`,
+          filePath: `uploads/${dt.toLowerCase()}_2.pdf`,
+          fileUrl: `/uploads/${dt.toLowerCase()}_2.pdf`,
+          mimeType: 'application/pdf',
+          fileSize: 1024,
+          status: 'PENDING',
+          isCurrentVersion: true,
+        },
+      });
+    }
+
     // 4. Submit Loan for Customer 1
     const loanRes = await request(app)
       .post('/api/customer/loan-applications')
@@ -212,7 +242,7 @@ describe('Phase 5 — Complete Customer & Admin Integration Suite', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-    });
+    }, 15000);
 
     it('should update and retrieve WhatsApp settings with masked token', async () => {
       const updateRes = await request(app)

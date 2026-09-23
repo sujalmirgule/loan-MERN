@@ -58,6 +58,14 @@ export const adminService = {
     return res;
   },
 
+  getAllMatchingCustomers: async (params?: Record<string, string | number | boolean | undefined>) => {
+    const res = await apiClient<{ success: boolean; data: any[]; total: number }>(API_ENDPOINTS.CUSTOMERS.ALL_MATCHING, {
+      tokenType: 'admin',
+      params,
+    });
+    return res;
+  },
+
   getCustomer360: async (id: string) => {
     const res = await apiClient<{ success: boolean; data: any }>(API_ENDPOINTS.CUSTOMERS.DETAIL(id), {
       tokenType: 'admin',
@@ -87,6 +95,90 @@ export const adminService = {
       params,
       responseType: 'blob',
     });
+  },
+
+  deactivateCustomer: async (id: string, reason?: string) => {
+    const res = await apiClient<{ success: boolean; message?: string; data: any }>(API_ENDPOINTS.CUSTOMERS.DEACTIVATE(id), {
+      method: 'PATCH',
+      tokenType: 'admin',
+      body: JSON.stringify({ reason }),
+    });
+    return res;
+  },
+
+  reactivateCustomer: async (id: string, reason?: string) => {
+    const res = await apiClient<{ success: boolean; message?: string; data: any }>(API_ENDPOINTS.CUSTOMERS.REACTIVATE(id), {
+      method: 'PATCH',
+      tokenType: 'admin',
+      body: JSON.stringify({ reason }),
+    });
+    return res;
+  },
+
+  bulkSendWhatsApp: async (payload: {
+    customerIds?: string[];
+    applicationIds?: string[];
+    filter?: Record<string, any>;
+    message: string;
+    templateName?: string;
+  }) => {
+    const res = await apiClient<{
+      success: boolean;
+      message?: string;
+      data: {
+        total: number;
+        sentCount: number;
+        failedCount: number;
+        results: Array<{
+          customerId?: string;
+          customerName?: string;
+          recipient?: string;
+          phone?: string;
+          status: string;
+          success?: boolean;
+          error?: string;
+          failureReason?: string;
+        }>;
+      };
+    }>('/admin/communication/whatsapp/bulk', {
+      method: 'POST',
+      tokenType: 'admin',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  bulkSendEmail: async (payload: {
+    customerIds?: string[];
+    applicationIds?: string[];
+    filter?: Record<string, any>;
+    subject: string;
+    message: string;
+    templateName?: string;
+  }) => {
+    const res = await apiClient<{
+      success: boolean;
+      message?: string;
+      data: {
+        total: number;
+        sentCount: number;
+        failedCount: number;
+        results: Array<{
+          customerId?: string;
+          customerName?: string;
+          recipient?: string;
+          status: string;
+          success?: boolean;
+          error?: string;
+          failureReason?: string;
+        }>;
+      };
+    }>('/admin/communication/email/bulk', {
+      method: 'POST',
+      tokenType: 'admin',
+      body: JSON.stringify(payload),
+    });
+    return res;
   },
 
   // --- Loans & Underwriting ---
@@ -513,11 +605,19 @@ export const adminService = {
     return res.data;
   },
 
-  testEmailConnection: async (payload?: any) => {
-    const res = await apiClient<{ success: boolean; message?: string }>(API_ENDPOINTS.SETTINGS.EMAIL_TEST, {
+  testEmailConnection: async () => {
+    const res = await apiClient<{ success: boolean; message?: string; status?: string; error?: string }>(API_ENDPOINTS.SETTINGS.EMAIL_TEST_CONNECTION, {
       method: 'POST',
       tokenType: 'admin',
-      body: JSON.stringify(payload || {}),
+    });
+    return res;
+  },
+
+  sendTestEmail: async (payload: { toEmail: string; subject?: string; message?: string }) => {
+    const res = await apiClient<{ success: boolean; message?: string; previewUrl?: string; error?: string }>(API_ENDPOINTS.SETTINGS.EMAIL_TEST, {
+      method: 'POST',
+      tokenType: 'admin',
+      body: JSON.stringify(payload),
     });
     return res;
   },
@@ -538,11 +638,19 @@ export const adminService = {
     return res.data;
   },
 
-  testWhatsAppConnection: async (payload?: any) => {
-    const res = await apiClient<{ success: boolean; message?: string }>(API_ENDPOINTS.SETTINGS.WHATSAPP_TEST, {
+  testWhatsAppConnection: async () => {
+    const res = await apiClient<{ success: boolean; message?: string; status?: string; error?: string }>(API_ENDPOINTS.SETTINGS.WHATSAPP_TEST_CONNECTION, {
       method: 'POST',
       tokenType: 'admin',
-      body: JSON.stringify(payload || {}),
+    });
+    return res;
+  },
+
+  sendTestWhatsApp: async (payload: { toNumber: string; message?: string }) => {
+    const res = await apiClient<{ success: boolean; message?: string; delivered?: boolean; error?: string }>(API_ENDPOINTS.SETTINGS.WHATSAPP_TEST, {
+      method: 'POST',
+      tokenType: 'admin',
+      body: JSON.stringify(payload),
     });
     return res;
   },

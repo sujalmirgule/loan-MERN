@@ -253,9 +253,13 @@ export function App() {
                     <Route path="settings/bank" element={<AdminBankSettingsPage />} />
                     <Route path="settings/payment-links" element={<AdminPaymentLinksPage />} />
                   </Route>
-                  <Route element={<AdminPermissionRoute permission="settings.view" />}>
+                  <Route element={<AdminPermissionRoute permission={['settings.view', 'communication.email', 'communication.whatsapp']} />}>
                     <Route path="settings/email" element={<AdminEmailSettings />} />
                     <Route path="settings/whatsapp" element={<AdminWhatsAppSettings />} />
+                    <Route path="email" element={<AdminEmailSettings />} />
+                    <Route path="whatsapp" element={<AdminWhatsAppSettings />} />
+                    <Route path="communication/email" element={<AdminEmailSettings />} />
+                    <Route path="communication/whatsapp" element={<AdminWhatsAppSettings />} />
                   </Route>
                 </Route>
               </Route>

@@ -280,11 +280,12 @@ export class EmailService {
   resolveVariables(template: string, variables: Record<string, string>): string {
     if (!template) return '';
 
-    return template.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_, key) => {
-      if (variables[key] !== undefined && variables[key] !== null) {
-        return variables[key];
+    return template.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/gi, (_, key) => {
+      const normalizedKey = key.trim();
+      if (variables[normalizedKey] !== undefined && variables[normalizedKey] !== null) {
+        return variables[normalizedKey];
       }
-      switch (key) {
+      switch (normalizedKey) {
         case 'customerName': return 'Customer';
         case 'applicationId': return 'N/A';
         case 'loanId': return 'N/A';
@@ -292,10 +293,11 @@ export class EmailService {
         case 'kycStatus': return 'Verified';
         case 'paymentStatus': return 'Pending';
         case 'chargeType': return 'Fee';
+        case 'loanAmount':
         case 'amount': return '0';
         case 'utr': return 'N/A';
         case 'invoiceNumber': return 'N/A';
-        case 'companyName': return 'Your Company';
+        case 'companyName': return 'Loan Approve';
         default: return '';
       }
     });
@@ -319,13 +321,18 @@ export class EmailService {
       },
     });
 
-    if (!customer) {
+    if (!customer || customer.isDeleted) {
       throw new Error(`Customer with ID ${customerId} not found`);
+    }
+
+    if (customer.status === 'DEACTIVATED' || customer.isActive === false) {
+      throw new Error(`Customer account is deactivated`);
     }
 
     const latestLoan = customer.loans && customer.loans.length > 0 ? customer.loans[0] : null;
     const branding = await prisma.brandingSettings.findUnique({ where: { id: 'default' } });
-    const companyName = branding?.companyName || 'Your Financial Services';
+    const companyName = branding?.companyName || 'Loan Approve';
+    const amountFormatted = latestLoan ? latestLoan.requestedAmount.toLocaleString('en-IN') : '0';
 
     const variables: Record<string, string> = {
       customerName: customer.fullName || 'Customer',
@@ -334,7 +341,8 @@ export class EmailService {
       loanStatus: latestLoan?.status ? latestLoan.status.replace(/_/g, ' ') : 'Pending',
       kycStatus: customer.kycStatus ? customer.kycStatus.replace(/_/g, ' ') : 'Pending',
       paymentStatus: latestLoan?.paymentStatus ? latestLoan.paymentStatus.replace(/_/g, ' ') : 'Not Required',
-      amount: latestLoan ? latestLoan.requestedAmount.toLocaleString('en-IN') : '0',
+      amount: amountFormatted,
+      loanAmount: amountFormatted,
       companyName,
     };
 
@@ -413,10 +421,17 @@ export class EmailService {
       if (adminExists) validAdminId = actor.id;
     }
 
+    let validLoanId: string | null = null;
+    const candidateLoanId = payload.loanId || latestLoan?.id;
+    if (candidateLoanId) {
+      const loanExists = await prisma.loanApplication.findUnique({ where: { id: candidateLoanId } });
+      if (loanExists) validLoanId = candidateLoanId;
+    }
+
     const emailRecord = await prisma.emailMessage.create({
       data: {
         customerId: customer.id,
-        loanId: payload.loanId || latestLoan?.id || null,
+        loanId: validLoanId,
         ticketId: payload.ticketId || null,
         adminId: validAdminId,
         recipientEmail: customer.email,
@@ -690,6 +705,150 @@ export class EmailService {
       actor,
       ipAddress
     );
+  }
+
+  /**
+   * Sends a custom test or ad-hoc email directly to any email address.
+   */
+  async sendCustomEmail(payload: {
+    to: string;
+    subject: string;
+    text: string;
+    html?: string;
+    attachments?: Array<{ filename: string; content: Buffer }>;
+  }): Promise<EmailSendResult> {
+    await this.refreshProviderConfig();
+    return this.provider.sendEmail({
+      to: payload.to,
+      subject: payload.subject,
+      text: payload.text,
+      html: payload.html,
+      attachments: payload.attachments,
+    });
+  }
+
+  /**
+   * Bulk sends Email messages to multiple loan applications.
+   */
+  async sendBulkApplicationEmails(input: {
+    applicationIds: string[];
+    subject?: string;
+    message?: string;
+    templateName?: string;
+    actor: AuthenticatedUser;
+    ipAddress?: string;
+  }) {
+    const { applicationIds, subject, message, templateName, actor, ipAddress } = input;
+    if (!applicationIds || !Array.isArray(applicationIds) || applicationIds.length === 0) {
+      throw new Error('Please select at least one loan application.');
+    }
+
+    await this.refreshProviderConfig();
+
+    const applications = await prisma.loanApplication.findMany({
+      where: { id: { in: applicationIds } },
+      include: { customer: true },
+    });
+
+    if (!applications || applications.length === 0) {
+      throw new Error('No matching loan applications found for the selected IDs.');
+    }
+
+    const branding = await prisma.brandingSettings.findUnique({ where: { id: 'default' } });
+    const companyName = branding?.companyName || 'Loan Finance';
+
+    const defaultSubject = `Loan Application Status Update: {{applicationId}}`;
+    const defaultTemplate = `Hello {{customerName}},\n\nYour loan application {{applicationId}} is currently {{loanStatus}}.\n\nThank you,\n{{companyName}}`;
+
+    const subjectToUse = subject && subject.trim().length > 0 ? subject.trim() : defaultSubject;
+    const messageToUse = message && message.trim().length > 0 ? message.trim() : defaultTemplate;
+
+    const results: any[] = [];
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (const app of applications) {
+      const customer = app.customer;
+      if (!customer || customer.isDeleted || !customer.email) {
+        failedCount++;
+        results.push({
+          applicationId: app.id,
+          applicationNumber: app.applicationNumber,
+          customerName: customer?.fullName || 'Unknown',
+          recipient: customer?.email || 'N/A',
+          success: false,
+          status: 'FAILED',
+          error: 'Customer record not found, deleted, or has no email address',
+        });
+        continue;
+      }
+
+      try {
+        const res = await this.sendSingleEmail(
+          {
+            customerId: customer.id,
+            loanId: app.id,
+            subject: subjectToUse,
+            message: messageToUse,
+            templateName: templateName || 'APPLICATION_STATUS_UPDATE',
+          },
+          actor,
+          ipAddress
+        );
+
+        if (res.status === 'SENT') {
+          sentCount++;
+        } else {
+          failedCount++;
+        }
+
+        results.push({
+          applicationId: app.id,
+          applicationNumber: app.applicationNumber,
+          customerName: customer.fullName,
+          recipient: customer.email,
+          success: res.status === 'SENT',
+          status: res.status,
+          error: res.error,
+        });
+      } catch (err: unknown) {
+        failedCount++;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        results.push({
+          applicationId: app.id,
+          applicationNumber: app.applicationNumber,
+          customerName: customer.fullName,
+          recipient: customer.email,
+          success: false,
+          status: 'FAILED',
+          error: errMsg,
+        });
+      }
+    }
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'BULK_EMAIL_APPLICATIONS_SENT',
+      entity: 'LoanApplication',
+      entityId: `bulk-${Date.now()}`,
+      newValue: {
+        total: applications.length,
+        sentCount,
+        failedCount,
+        templateName,
+      },
+      ipAddress,
+    });
+
+    return {
+      success: sentCount > 0 || (applications.length > 0 && failedCount === 0),
+      total: applications.length,
+      sentCount,
+      failedCount,
+      results,
+    };
   }
 
   /**

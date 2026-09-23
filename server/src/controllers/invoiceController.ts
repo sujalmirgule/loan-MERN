@@ -48,7 +48,7 @@ export const invoiceController = {
               fileUrl: `/api/customer/charges/${charge.id}/invoice`,
               issuedAt: charge.paidAt || charge.updatedAt || new Date(),
             },
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
 

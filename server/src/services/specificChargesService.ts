@@ -347,7 +347,13 @@ export class SpecificChargesService {
     });
 
     const isKycApproved = customer.kycStatus === 'APPROVED' || customer.kycStatus === 'VERIFIED';
-    const kycCharge = allCharges.find(
+    const paidKycCharge = allCharges.find(
+      (c) => (c.name.includes('KYC') || c.remark?.includes('KYC')) && c.status === 'PAID'
+    );
+    const utrKycCharge = allCharges.find(
+      (c) => (c.name.includes('KYC') || c.remark?.includes('KYC')) && c.transactionRef && c.transactionRef.trim().length > 0
+    );
+    const kycCharge = paidKycCharge || utrKycCharge || allCharges.find(
       (c) => c.name.includes('KYC') || c.remark?.includes('KYC')
     );
 

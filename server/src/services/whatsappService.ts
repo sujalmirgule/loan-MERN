@@ -7,6 +7,7 @@ import { decryptSecret } from '../utils/security';
 import { WhatsAppProvider } from '../providers/whatsapp/whatsappProvider.interface';
 import { MetaWhatsAppProvider } from '../providers/whatsapp/metaWhatsAppProvider';
 import { DevelopmentWhatsAppProvider } from '../providers/whatsapp/developmentWhatsAppProvider';
+import { WaBridgeWhatsAppProvider } from '../providers/whatsapp/waBridgeProvider';
 
 export interface SendWhatsAppInput {
   customerId: string;
@@ -47,6 +48,9 @@ export class WhatsAppService {
 
   private resolveInitialProvider(): WhatsAppProvider {
     const configuredProvider = (process.env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
+    if (configuredProvider === 'wabridge') {
+      return new WaBridgeWhatsAppProvider();
+    }
     if (configuredProvider === 'meta' || process.env.NODE_ENV === 'test') {
       return new MetaWhatsAppProvider();
     }
@@ -76,16 +80,16 @@ export class WhatsAppService {
       return;
     }
 
-    const configuredProvider = (process.env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
+    const dbSettings = await prisma.whatsAppSettings.findUnique({ where: { id: 'default' } });
+    const configuredProvider = (dbSettings?.provider || process.env.WHATSAPP_PROVIDER || '').trim().toUpperCase();
 
-    if (configuredProvider === 'development' && process.env.NODE_ENV !== 'test') {
+    if (configuredProvider === 'DEVELOPMENT' && process.env.NODE_ENV !== 'test') {
       if (!(this.provider instanceof DevelopmentWhatsAppProvider)) {
         this.provider = new DevelopmentWhatsAppProvider();
       }
       return;
     }
 
-    const dbSettings = await prisma.whatsAppSettings.findUnique({ where: { id: 'default' } });
     let dbToken = '';
     if (dbSettings?.accessTokenEnc) {
       try {
@@ -95,15 +99,29 @@ export class WhatsAppService {
       }
     }
 
-    const effectiveToken = process.env.WHATSAPP_ACCESS_TOKEN || dbToken;
-    const effectivePhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || dbSettings?.phoneNumberId || '';
+    const effectiveToken = process.env.WABRIDGE_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN || dbToken;
+    const effectivePhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || dbSettings?.phoneNumberId || '1032424393284050';
     const apiVersion = process.env.WHATSAPP_API_VERSION || 'v18.0';
     const effectiveEndpoint =
       process.env.WHATSAPP_API_URL ||
       dbSettings?.apiEndpoint ||
       (effectivePhoneId ? `https://graph.facebook.com/${apiVersion}/${effectivePhoneId}/messages` : '');
 
-    if (effectiveToken || configuredProvider === 'meta' || process.env.NODE_ENV === 'test') {
+    if (configuredProvider === 'WABRIDGE') {
+      if (!(this.provider instanceof WaBridgeWhatsAppProvider)) {
+        this.provider = new WaBridgeWhatsAppProvider({
+          apiUrl: dbSettings?.apiEndpoint || process.env.WABRIDGE_API_URL || 'https://web.wabridge.com/api',
+          accessToken: effectiveToken,
+          deviceId: dbSettings?.businessAccountId || process.env.WABRIDGE_DEVICE_ID || '69b16310667cead707b893e1',
+          phoneNumberId: effectivePhoneId,
+          wabaId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '946428907892164',
+          senderNumber: dbSettings?.phoneNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919046833151',
+        });
+      }
+      return;
+    }
+
+    if (effectiveToken || configuredProvider === 'META' || configuredProvider === 'META_CLOUD' || process.env.NODE_ENV === 'test') {
       if (!(this.provider instanceof MetaWhatsAppProvider)) {
         this.provider = new MetaWhatsAppProvider({
           apiUrl: effectiveEndpoint,
@@ -140,29 +158,33 @@ export class WhatsAppService {
       loanStatus?: string;
       kycStatus?: string;
       paymentStatus?: string;
+      loanAmount?: string;
       amount?: string;
       chargeType?: string;
       companyName?: string;
       utr?: string;
     }
   ): string {
-    let output = template;
-    const replaceMap: Record<string, string | undefined> = {
-      customerName: variables.customerName,
-      applicationId: variables.applicationId,
-      loanId: variables.loanId,
-      loanStatus: variables.loanStatus,
-      kycStatus: variables.kycStatus,
-      paymentStatus: variables.paymentStatus,
-      amount: variables.amount,
-      chargeType: variables.chargeType,
-      companyName: variables.companyName,
-      utr: variables.utr,
+    if (!template) return '';
+    const safeAmount = variables.loanAmount || variables.amount || '0';
+    const replaceMap: Record<string, string> = {
+      customerName: variables.customerName || 'Customer',
+      applicationId: variables.applicationId || 'N/A',
+      loanId: variables.loanId || 'N/A',
+      loanStatus: variables.loanStatus || 'Pending',
+      kycStatus: variables.kycStatus || 'Pending',
+      paymentStatus: variables.paymentStatus || 'Pending',
+      loanAmount: safeAmount,
+      amount: safeAmount,
+      chargeType: variables.chargeType || 'Fee',
+      companyName: variables.companyName || 'Loan Approve',
+      utr: variables.utr || 'N/A',
     };
 
+    let output = template;
     for (const [key, val] of Object.entries(replaceMap)) {
-      const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
-      output = output.replace(regex, val || '');
+      const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi');
+      output = output.replace(regex, val);
     }
     return output;
   }
@@ -189,6 +211,10 @@ export class WhatsAppService {
 
     if (!customer || customer.isDeleted) {
       throw new AppError(404, 'Customer record not found');
+    }
+
+    if (customer.status === 'DEACTIVATED' || customer.isActive === false) {
+      throw new AppError(400, 'Customer account is deactivated.');
     }
 
     // 2. Format and validate mobile
@@ -238,10 +264,16 @@ export class WhatsAppService {
       if (adminExists) validAdminId = actor.id;
     }
 
+    let validLoanId: string | null = null;
+    if (latestLoan?.id) {
+      const loanExists = await prisma.loanApplication.findUnique({ where: { id: latestLoan.id } });
+      if (loanExists) validLoanId = latestLoan.id;
+    }
+
     const waRecord = await prisma.whatsAppMessage.create({
       data: {
         customerId: customer.id,
-        loanId: latestLoan?.id || null,
+        loanId: validLoanId,
         adminId: validAdminId,
         phone: sendResult.recipient || customer.mobile,
         message: finalMessage,
@@ -379,6 +411,278 @@ export class WhatsAppService {
   }
 
   /**
+   * Bulk sends WhatsApp messages to multiple loan applications.
+   */
+  async sendBulkApplicationMessages(input: {
+    applicationIds: string[];
+    message?: string;
+    templateName?: string;
+    actor: AuthenticatedUser;
+    ipAddress?: string;
+  }) {
+    const { applicationIds, message, templateName, actor, ipAddress } = input;
+    if (!applicationIds || !Array.isArray(applicationIds) || applicationIds.length === 0) {
+      throw new AppError(400, 'Please select at least one loan application.');
+    }
+
+    await this.refreshProviderConfig();
+
+    const applications = await prisma.loanApplication.findMany({
+      where: { id: { in: applicationIds } },
+      include: { customer: true },
+    });
+
+    if (!applications || applications.length === 0) {
+      throw new AppError(404, 'No matching loan applications found for the selected IDs.');
+    }
+
+    const branding = await prisma.brandingSettings.findUnique({ where: { id: 'default' } });
+    const companyName = branding?.companyName || 'Loan Finance';
+
+    let validAdminId: string | null = null;
+    if (actor?.id) {
+      const adminExists = await prisma.adminUser.findUnique({ where: { id: actor.id } });
+      if (adminExists) validAdminId = actor.id;
+    }
+
+    const defaultTemplate = `Hello {{customerName}},\n\nYour loan application {{applicationId}} is currently {{loanStatus}}.\n\nThank you,\n{{companyName}}`;
+    const templateToUse = message && message.trim().length > 0 ? message.trim() : defaultTemplate;
+
+    const results: any[] = [];
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (const app of applications) {
+      const customer = app.customer;
+      if (!customer || customer.isDeleted) {
+        failedCount++;
+        results.push({
+          applicationId: app.id,
+          applicationNumber: app.applicationNumber,
+          customerName: customer?.fullName || 'Unknown',
+          recipient: customer?.mobile || 'N/A',
+          success: false,
+          status: 'FAILED',
+          error: 'Customer record not found or deleted',
+        });
+        continue;
+      }
+
+      const cleanMobile = customer.mobile.replace(/\D/g, '');
+      if (cleanMobile.length < 10) {
+        failedCount++;
+        results.push({
+          applicationId: app.id,
+          applicationNumber: app.applicationNumber,
+          customerName: customer.fullName,
+          recipient: customer.mobile,
+          success: false,
+          status: 'FAILED',
+          error: 'Invalid recipient phone number format',
+        });
+        continue;
+      }
+
+      const finalMessage = this.resolveTemplate(templateToUse, {
+        customerName: customer.fullName,
+        applicationId: app.applicationNumber,
+        loanId: app.accountNumber || app.applicationNumber,
+        loanStatus: app.status,
+        kycStatus: customer.kycStatus || 'Pending',
+        paymentStatus: app.paymentStatus || 'Pending',
+        amount: `₹${app.requestedAmount.toLocaleString('en-IN')}`,
+        companyName,
+      });
+
+      try {
+        const sendResult = await this.provider.sendMessage({
+          to: cleanMobile,
+          message: finalMessage,
+          templateName: templateName || 'APPLICATION_STATUS_UPDATE',
+        });
+
+        const isSent = sendResult.status === 'SENT';
+        const failureReason = sendResult.error || (isSent ? null : 'WHATSAPP_PROVIDER_NOT_CONFIGURED');
+
+        await prisma.whatsAppMessage.create({
+          data: {
+            customerId: customer.id,
+            loanId: app.id,
+            adminId: validAdminId,
+            phone: sendResult.recipient || customer.mobile,
+            message: finalMessage,
+            templateName: templateName || 'APPLICATION_STATUS_UPDATE',
+            providerMessageId: sendResult.providerMessageId || null,
+            status: isSent ? 'SENT' : 'FAILED',
+            sentAt: isSent ? new Date() : null,
+            failedAt: isSent ? null : new Date(),
+            failureReason,
+          },
+        });
+
+        if (isSent) {
+          sentCount++;
+        } else {
+          failedCount++;
+        }
+
+        results.push({
+          applicationId: app.id,
+          applicationNumber: app.applicationNumber,
+          customerName: customer.fullName,
+          recipient: sendResult.recipient || customer.mobile,
+          success: isSent,
+          status: isSent ? 'SENT' : 'FAILED',
+          error: failureReason || undefined,
+        });
+      } catch (err: unknown) {
+        failedCount++;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        results.push({
+          applicationId: app.id,
+          applicationNumber: app.applicationNumber,
+          customerName: customer.fullName,
+          recipient: customer.mobile,
+          success: false,
+          status: 'FAILED',
+          error: errMsg,
+        });
+      }
+    }
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'BULK_WHATSAPP_APPLICATIONS_SENT',
+      entity: 'LoanApplication',
+      entityId: `bulk-${Date.now()}`,
+      newValue: {
+        total: applications.length,
+        sentCount,
+        failedCount,
+        templateName,
+      },
+      ipAddress,
+    });
+
+    return {
+      success: sentCount > 0 || (applications.length > 0 && failedCount === 0),
+      total: applications.length,
+      sentCount,
+      failedCount,
+      results,
+    };
+  }
+
+  /**
+   * Dispatches an actual test diagnostic message to a single number with DB persistence.
+   */
+  async sendTestPing(input: {
+    toNumber: string;
+    message?: string;
+    templateName?: string;
+    actor: AuthenticatedUser;
+    ipAddress?: string;
+  }) {
+    const { toNumber, message: customMsg, templateName, actor, ipAddress } = input;
+    if (!toNumber || typeof toNumber !== 'string' || !toNumber.trim()) {
+      throw new AppError(400, 'Recipient mobile number is required.');
+    }
+
+    const clean = toNumber.trim().replace(/[\s\-\(\)]/g, '');
+    const digits = clean.replace(/\D/g, '');
+
+    if (digits.length < 10) {
+      throw new AppError(400, 'Invalid recipient mobile number. Must contain at least 10 digits.');
+    }
+
+    await this.refreshProviderConfig();
+
+    if (!this.provider.isConfigured()) {
+      return {
+        success: false,
+        delivered: false,
+        message: 'WhatsApp integration is not configured. Please configure and save valid Meta Cloud API credentials.',
+        error: 'WHATSAPP_PROVIDER_NOT_CONFIGURED',
+      };
+    }
+
+    const testMessage =
+      customMsg?.trim() ||
+      'Hello! This is a diagnostic test ping from the Loan Approve fintech platform. Your WhatsApp Business integration is working properly.';
+
+    const sendResult = await this.provider.sendMessage({
+      to: clean,
+      message: testMessage,
+      templateName: templateName || 'TEST_PING',
+    });
+
+    const isSent = sendResult.status === 'SENT';
+    const failureReason = sendResult.error || (isSent ? null : 'WHATSAPP_PROVIDER_NOT_CONFIGURED');
+
+    let validAdminId: string | null = null;
+    if (actor?.id) {
+      const adminExists = await prisma.adminUser.findUnique({ where: { id: actor.id } });
+      if (adminExists) validAdminId = actor.id;
+    }
+
+    // Find customer by phone or default customer if available to satisfy DB relation
+    const customer =
+      (await prisma.customer.findFirst({
+        where: { mobile: { contains: digits.slice(-10) } },
+      })) || (await prisma.customer.findFirst());
+
+    if (customer) {
+      // Persist test message in database
+      await prisma.whatsAppMessage.create({
+        data: {
+          customerId: customer.id,
+          adminId: validAdminId,
+          phone: sendResult.recipient || clean,
+          message: testMessage,
+          templateName: templateName || 'TEST_PING',
+          providerMessageId: sendResult.providerMessageId || null,
+          status: isSent ? 'SENT' : 'FAILED',
+          sentAt: isSent ? new Date() : null,
+          failedAt: isSent ? null : new Date(),
+          failureReason,
+        },
+      });
+    }
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: isSent ? 'TEST_WHATSAPP_SENT' : 'TEST_WHATSAPP_FAILED',
+      entity: 'WhatsAppSettings',
+      entityId: 'default',
+      newValue: {
+        recipient: sendResult.recipient || clean,
+        status: isSent ? 'SENT' : 'FAILED',
+        failureReason,
+      },
+      ipAddress,
+    });
+
+    if (isSent) {
+      return {
+        success: true,
+        delivered: true,
+        message: 'Test WhatsApp message sent successfully.',
+      };
+    } else {
+      return {
+        success: false,
+        delivered: false,
+        message: `Failed to send WhatsApp message: ${failureReason}`,
+        error: failureReason || undefined,
+      };
+    }
+  }
+
+  /**
    * For backwards compatibility with existing callers
    */
   async sendPendingApprovalMessage(input: {
@@ -450,3 +754,4 @@ export class WhatsAppService {
 }
 
 export const whatsappService = new WhatsAppService();
+

@@ -129,7 +129,7 @@ export const authService = {
       throw new AppError(404, 'Customer account not found with this mobile number. Please register first.');
     }
 
-    if (customer.status !== 'ACTIVE') {
+    if (customer.status !== 'ACTIVE' || customer.isActive === false) {
       throw new AppError(403, 'Your account has been deactivated or suspended. Please contact customer support.');
     }
 

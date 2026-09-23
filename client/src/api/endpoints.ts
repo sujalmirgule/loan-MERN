@@ -11,6 +11,7 @@ export const API_ENDPOINTS = {
     PROFILE: '/customer/profile',
     UPDATE: '/customer/profile',
     LIST: '/admin/customers',
+    ALL_MATCHING: '/admin/customers/all-matching',
     DETAIL: (id: string) => `/admin/customers/${id}`,
     STATES: '/admin/customers/states',
     EXPORT: '/admin/customers/export',
@@ -18,6 +19,8 @@ export const API_ENDPOINTS = {
     WHATSAPP_HISTORY: (id: string) => `/admin/customers/${id}/whatsapp/history`,
     INVOICE_PDF: (id: string) => `/admin/customers/${id}/invoice/pdf`,
     APPROVAL_LETTER_PDF: (id: string) => `/admin/customers/${id}/approval-letter/pdf`,
+    DEACTIVATE: (id: string) => `/admin/customers/${id}/deactivate`,
+    REACTIVATE: (id: string) => `/admin/customers/${id}/reactivate`,
   },
   CUSTOMER_DOCS: {
     LIST: '/customer/documents',
@@ -112,9 +115,11 @@ export const API_ENDPOINTS = {
     EMAIL_GET: '/admin/settings/email',
     EMAIL_UPDATE: '/admin/settings/email',
     EMAIL_TEST: '/admin/settings/email/test',
+    EMAIL_TEST_CONNECTION: '/admin/settings/email/test-connection',
     WHATSAPP_GET: '/admin/settings/whatsapp',
     WHATSAPP_UPDATE: '/admin/settings/whatsapp',
     WHATSAPP_TEST: '/admin/settings/whatsapp/test',
+    WHATSAPP_TEST_CONNECTION: '/admin/settings/whatsapp/test-connection',
     PAYMENT_GET: '/admin/settings/payment',
     PAYMENT_UPDATE: '/admin/settings/payment',
   },
@@ -204,8 +209,14 @@ export const API_ENDPOINTS = {
     CUSTOMERS: '/admin/communication/customers',
     TEMPLATES: '/admin/communication/templates',
     SEND_EMAIL: '/admin/communication/email',
+    SEND_EMAIL_BULK: '/admin/communication/email/bulk',
+    SEND_EMAIL_BULK_APPLICATIONS: '/admin/communication/email/bulk-applications',
+    SEND_WHATSAPP: '/admin/communication/whatsapp',
+    SEND_WHATSAPP_BULK: '/admin/communication/whatsapp/bulk',
+    SEND_WHATSAPP_BULK_APPLICATIONS: '/admin/communication/whatsapp/bulk-applications',
     HISTORY: '/admin/communication/history',
     CUSTOMER_HISTORY: (customerId: string) => `/admin/communication/history/customer/${customerId}`,
   },
 };
+
 

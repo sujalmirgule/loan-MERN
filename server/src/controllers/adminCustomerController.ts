@@ -42,6 +42,28 @@ export class AdminCustomerController {
   }
 
   /**
+   * Admin: Get all matching customers (unpaginated) for bulk selection.
+   */
+  async getMatchingCustomers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { search, kycStatus, status, state, city, fromDate, toDate, domainId } = req.query;
+      const customers = await adminCustomerService.getMatchingCustomers({
+        search: search as string,
+        kycStatus: kycStatus as string,
+        status: status as string,
+        state: state as string,
+        city: city as string,
+        fromDate: fromDate as string,
+        toDate: toDate as string,
+        domainId: domainId as string,
+      });
+      res.status(200).json({ success: true, data: customers, total: customers.length });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
    * Admin: Export filtered customers dataset as CSV.
    */
   async exportCsv(req: Request, res: Response, next: NextFunction) {
@@ -185,6 +207,56 @@ export class AdminCustomerController {
   }
 
   /**
+   * Admin: Deactivate/Soft-delete customer account.
+   */
+  async deactivateCustomer(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const id = String(req.params.id);
+      const { reason } = req.body;
+
+      const customer = await adminCustomerService.deactivateCustomer(
+        id,
+        reason,
+        req.user,
+        req.ip
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Customer account deactivated successfully. Login is disabled while all historical records remain preserved.',
+        data: customer,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Reactivate customer account.
+   */
+  async reactivateCustomer(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const id = String(req.params.id);
+
+      const customer = await adminCustomerService.reactivateCustomer(
+        id,
+        req.user,
+        req.ip
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Customer account reactivated successfully. Login access has been restored.',
+        data: customer,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
    * Admin: Manually register customer and create loan application.
    */
   async manualCreateCustomer(req: Request, res: Response, next: NextFunction) {
@@ -198,3 +270,5 @@ export class AdminCustomerController {
 }
 
 export const adminCustomerController = new AdminCustomerController();
+
+

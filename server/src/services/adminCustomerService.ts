@@ -55,8 +55,18 @@ export class AdminCustomerService {
         });
       } else if (s === 'DISBURSED') {
         andConditions.push({ loans: { some: { status: 'DISBURSED' } } });
+      } else if (s === 'DEACTIVATED') {
+        andConditions.push({
+          OR: [
+            { status: 'DEACTIVATED' },
+            { isActive: false },
+          ],
+        });
       } else if (s === 'ACTIVE') {
-        andConditions.push({ status: 'ACTIVE' });
+        andConditions.push({
+          status: 'ACTIVE',
+          isActive: true,
+        });
       }
     }
 
@@ -221,6 +231,63 @@ export class AdminCustomerService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Retrieves all customer records matching a filter without pagination limits
+   * specifically used for 'Select All Matching / Select All Pending' bulk messaging.
+   * Strictly excludes deactivated or soft-deleted customer accounts.
+   */
+  async getMatchingCustomers(filters: {
+    search?: string;
+    kycStatus?: string;
+    status?: string;
+    state?: string;
+    city?: string;
+    fromDate?: string;
+    toDate?: string;
+    domainId?: string;
+  }) {
+    const where = this.buildCustomerFilterWhere(filters);
+    const andWhere = Array.isArray(where.AND) ? [...where.AND] : [];
+    andWhere.push({ isDeleted: false, isActive: true, status: { not: 'DEACTIVATED' } });
+
+    const customers = await prisma.customer.findMany({
+      where: { AND: andWhere },
+      select: {
+        id: true,
+        fullName: true,
+        mobile: true,
+        email: true,
+        status: true,
+        kycStatus: true,
+        state: true,
+        city: true,
+        loans: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            applicationNumber: true,
+            status: true,
+            requestedAmount: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return customers.map((c) => ({
+      id: c.id,
+      fullName: c.fullName,
+      mobile: c.mobile,
+      email: c.email,
+      status: c.status,
+      kycStatus: c.kycStatus,
+      state: c.state,
+      city: c.city,
+      latestLoan: c.loans[0] || null,
+    }));
   }
 
   /**
@@ -748,6 +815,108 @@ export class AdminCustomerService {
     });
 
     return { customer, loan };
+  }
+
+  /**
+   * Deactivate/soft-delete a customer account.
+   * Disables login while preserving all financial, KYC, payment, and loan records.
+   */
+  async deactivateCustomer(
+    customerId: string,
+    reason?: string,
+    actor?: { id: string; fullName: string; email: string },
+    ipAddress?: string
+  ) {
+    const existing = await prisma.customer.findUnique({
+      where: { id: customerId },
+    });
+
+    if (!existing || existing.isDeleted) {
+      throw new AppError(404, 'Customer record not found');
+    }
+
+    const previousValue = {
+      status: existing.status,
+      isActive: existing.isActive,
+      deletedAt: existing.deletedAt,
+    };
+
+    const updated = await prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        status: 'DEACTIVATED',
+        isActive: false,
+        deletedAt: new Date(),
+      },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor?.id,
+      actorName: actor?.fullName || actor?.email || 'System Admin',
+      action: 'CUSTOMER_ACCOUNT_DEACTIVATED',
+      entity: 'Customer',
+      entityId: customerId,
+      previousValue,
+      newValue: {
+        status: 'DEACTIVATED',
+        isActive: false,
+        reason: reason || 'Administrative Deactivation',
+      },
+      ipAddress,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Reactivate a previously deactivated customer account.
+   * Restores login access while maintaining all historical records intact.
+   */
+  async reactivateCustomer(
+    customerId: string,
+    actor?: { id: string; fullName: string; email: string },
+    ipAddress?: string
+  ) {
+    const existing = await prisma.customer.findUnique({
+      where: { id: customerId },
+    });
+
+    if (!existing || existing.isDeleted) {
+      throw new AppError(404, 'Customer record not found');
+    }
+
+    const previousValue = {
+      status: existing.status,
+      isActive: existing.isActive,
+      deletedAt: existing.deletedAt,
+    };
+
+    const updated = await prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        status: 'ACTIVE',
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor?.id,
+      actorName: actor?.fullName || actor?.email || 'System Admin',
+      action: 'CUSTOMER_ACCOUNT_REACTIVATED',
+      entity: 'Customer',
+      entityId: customerId,
+      previousValue,
+      newValue: {
+        status: 'ACTIVE',
+        isActive: true,
+      },
+      ipAddress,
+    });
+
+    return updated;
   }
 }
 

@@ -19,6 +19,13 @@ import {
   FileSignature,
   FileSearch,
   TrendingUp,
+  MessageSquare,
+  Mail,
+  Send,
+  X,
+  CheckSquare,
+  Square,
+  Users,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,7 +41,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/api/client';
-import { loanApi } from '@/api/loanApi';
+import { loanApi, BulkWhatsAppResponse, BulkEmailResponse } from '@/api/loanApi';
 import { useBrandTitle } from '@/hooks/useBrandTitle';
 
 const INDIAN_STATES = [
@@ -82,6 +89,30 @@ export const AdminLoanApprovalPage: React.FC = () => {
   const [loanTypeFilter, setLoanTypeFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  // Bulk Selection State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Bulk WhatsApp Campaign State
+  const [isBulkWhatsAppModalOpen, setIsBulkWhatsAppModalOpen] = useState(false);
+  const [bulkWhatsAppMessage, setBulkWhatsAppMessage] = useState(
+    'Hello {{customerName}},\n\nYour loan application #{{applicationId}} is currently {{loanStatus}}.\n\nThank you,\n{{companyName}}'
+  );
+  const [bulkWhatsAppTemplateName, setBulkWhatsAppTemplateName] = useState('APPLICATION_STATUS_UPDATE');
+  const [isSendingBulkWhatsApp, setIsSendingBulkWhatsApp] = useState(false);
+  const [bulkWhatsAppCampaignResult, setBulkWhatsAppCampaignResult] = useState<BulkWhatsAppResponse['data'] | null>(null);
+  const [bulkWhatsAppError, setBulkWhatsAppError] = useState<string | null>(null);
+
+  // Bulk Email Campaign State
+  const [isBulkEmailModalOpen, setIsBulkEmailModalOpen] = useState(false);
+  const [bulkEmailSubject, setBulkEmailSubject] = useState('Update regarding your Loan Application #{{applicationId}}');
+  const [bulkEmailMessage, setBulkEmailMessage] = useState(
+    'Dear {{customerName}},\n\nWe would like to inform you that your loan application #{{applicationId}} is currently under the status: {{loanStatus}}.\n\nWarm regards,\nSupport Team\n{{companyName}}'
+  );
+  const [bulkEmailTemplateName, setBulkEmailTemplateName] = useState('APPLICATION_STATUS_UPDATE');
+  const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
+  const [bulkEmailCampaignResult, setBulkEmailCampaignResult] = useState<BulkEmailResponse['data'] | null>(null);
+  const [bulkEmailError, setBulkEmailError] = useState<string | null>(null);
 
   // Underwriting Action Modals state
   const [selectedLoan, setSelectedLoan] = useState<any | null>(null);
@@ -198,16 +229,44 @@ export const AdminLoanApprovalPage: React.FC = () => {
     totalPages: 1,
   };
 
+  // Selection helpers
+  const isAllSelected = loans.length > 0 && loans.every((loan) => selectedIds.includes(loan.id));
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      const pageIds = new Set(loans.map((l) => l.id));
+      setSelectedIds((prev) => prev.filter((id) => !pageIds.has(id)));
+    } else {
+      const newIds = new Set([...selectedIds, ...loans.map((l) => l.id)]);
+      setSelectedIds(Array.from(newIds));
+    }
+  };
+
+  const handleToggleSelectRow = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const selectedLoans = loans.filter((loan) => selectedIds.includes(loan.id));
+
+  // Clear selection on any filter change
+  React.useEffect(() => {
+    setSelectedIds([]);
+  }, [activeTab, pendingSubFilter, search, stateFilter, loanTypeFilter, dateFrom, dateTo, page]);
+
   // Tab switcher
   const handleTabChange = (tab: 'PENDING' | 'APPROVED' | 'REJECTED') => {
     setActiveTab(tab);
     setPage(1);
+    setSelectedIds([]);
     setSearchParams({ tab });
   };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
+    setSelectedIds([]);
     setSearch(searchInput.trim());
   };
 
@@ -220,6 +279,105 @@ export const AdminLoanApprovalPage: React.FC = () => {
     setDateTo('');
     setPendingSubFilter('ALL');
     setPage(1);
+    setSelectedIds([]);
+  };
+
+  // Bulk WhatsApp Handlers
+  const handleOpenBulkWhatsAppModal = () => {
+    setBulkWhatsAppCampaignResult(null);
+    setBulkWhatsAppError(null);
+    setIsBulkWhatsAppModalOpen(true);
+  };
+
+  const handleDispatchBulkWhatsApp = async () => {
+    if (selectedIds.length === 0) return;
+    setIsSendingBulkWhatsApp(true);
+    setBulkWhatsAppError(null);
+
+    try {
+      const res = await loanApi.sendBulkWhatsAppApplications({
+        applicationIds: selectedIds,
+        message: bulkWhatsAppMessage.trim(),
+        templateName: bulkWhatsAppTemplateName,
+      });
+
+      if (res.data) {
+        setBulkWhatsAppCampaignResult(res.data);
+      } else {
+        setBulkWhatsAppCampaignResult({
+          total: selectedIds.length,
+          sentCount: selectedIds.length,
+          failedCount: 0,
+          results: [],
+        });
+      }
+    } catch (err: unknown) {
+      setBulkWhatsAppError(err instanceof Error ? err.message : 'Failed to dispatch bulk WhatsApp campaign.');
+    } finally {
+      setIsSendingBulkWhatsApp(false);
+    }
+  };
+
+  const handleWhatsAppTemplateSelect = (tmpl: string) => {
+    setBulkWhatsAppTemplateName(tmpl);
+    if (tmpl === 'APPLICATION_STATUS_UPDATE') {
+      setBulkWhatsAppMessage('Hello {{customerName}},\n\nYour loan application #{{applicationId}} is currently {{loanStatus}}.\n\nThank you,\n{{companyName}}');
+    } else if (tmpl === 'KYC_REMINDER') {
+      setBulkWhatsAppMessage('Dear {{customerName}},\n\nKindly complete your KYC document verification for loan application #{{applicationId}} to expedite approval.\n\nSupport Team,\n{{companyName}}');
+    } else if (tmpl === 'APPROVAL_ALERT') {
+      setBulkWhatsAppMessage('Congratulations {{customerName}}!\n\nYour loan application #{{applicationId}} has been APPROVED for {{amount}}.\n\nPlease sign in to accept your agreement.\n{{companyName}}');
+    }
+  };
+
+  // Bulk Email Handlers
+  const handleOpenBulkEmailModal = () => {
+    setBulkEmailCampaignResult(null);
+    setBulkEmailError(null);
+    setIsBulkEmailModalOpen(true);
+  };
+
+  const handleDispatchBulkEmail = async () => {
+    if (selectedIds.length === 0) return;
+    setIsSendingBulkEmail(true);
+    setBulkEmailError(null);
+
+    try {
+      const res = await loanApi.sendBulkEmailApplications({
+        applicationIds: selectedIds,
+        subject: bulkEmailSubject.trim(),
+        message: bulkEmailMessage.trim(),
+        templateName: bulkEmailTemplateName,
+      });
+
+      if (res.data) {
+        setBulkEmailCampaignResult(res.data);
+      } else {
+        setBulkEmailCampaignResult({
+          total: selectedIds.length,
+          sentCount: selectedIds.length,
+          failedCount: 0,
+          results: [],
+        });
+      }
+    } catch (err: unknown) {
+      setBulkEmailError(err instanceof Error ? err.message : 'Failed to dispatch bulk Email campaign.');
+    } finally {
+      setIsSendingBulkEmail(false);
+    }
+  };
+
+  const handleEmailTemplateSelect = (tmpl: string) => {
+    setBulkEmailTemplateName(tmpl);
+    if (tmpl === 'APPLICATION_STATUS_UPDATE') {
+      setBulkEmailSubject('Update regarding your Loan Application #{{applicationId}}');
+      setBulkEmailMessage('Dear {{customerName}},\n\nWe would like to inform you that your loan application #{{applicationId}} is currently under the status: {{loanStatus}}.\n\nIf you have any queries, please feel free to reach out.\n\nWarm regards,\nSupport Team\n{{companyName}}');
+    } else if (tmpl === 'KYC_REMINDER') {
+      setBulkEmailSubject('Action Required: Complete KYC for Application #{{applicationId}}');
+      setBulkEmailMessage('Dear {{customerName}},\n\nKindly complete your pending KYC document submission for loan application #{{applicationId}} at your earliest convenience to proceed with your sanction.\n\nBest regards,\nVerification Team\n{{companyName}}');
+    } else if (tmpl === 'APPROVAL_ALERT') {
+      setBulkEmailSubject('Congratulations! Loan Application #{{applicationId}} Sanctioned');
+      setBulkEmailMessage('Dear {{customerName}},\n\nGreat news! Your loan application #{{applicationId}} has been officially APPROVED and SANCTIONED.\n\nPlease log in to review and sign your digital loan agreement.\n\nWarm regards,\nCredit Team\n{{companyName}}');
+    }
   };
 
   // Underwriting Mutations
@@ -605,6 +763,48 @@ export const AdminLoanApprovalPage: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* Bulk Action Sticky Bar */}
+      {selectedIds.length > 0 && (
+        <div className="p-4 bg-slate-900 text-white rounded-2xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs">
+              {selectedIds.length}
+            </span>
+            <span className="text-sm font-semibold">
+              {selectedIds.length} application{selectedIds.length > 1 ? 's' : ''} selected
+              {activeTab && ` (${activeTab.toLowerCase()} queue)`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleOpenBulkWhatsAppModal}
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow transition"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Send WhatsApp
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenBulkEmailModal}
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow transition"
+            >
+              <Mail className="w-4 h-4" />
+              Send Email
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl transition"
+            >
+              <X className="w-4 h-4" />
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Applications Content List */}
       <Card className="shadow-sm border-border bg-surface">
         <CardHeader className="pb-3 border-b border-border flex-row items-center justify-between">
@@ -647,6 +847,20 @@ export const AdminLoanApprovalPage: React.FC = () => {
                 <table className="w-full text-xs text-left">
                   <thead className="bg-surface-elevated border-b border-border text-text-secondary font-semibold uppercase tracking-wider">
                     <tr>
+                      <th className="w-10 py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={handleToggleSelectAll}
+                          className="text-slate-500 hover:text-slate-800 transition flex items-center justify-center"
+                          title={isAllSelected ? 'Deselect all' : 'Select all on page'}
+                        >
+                          {isAllSelected ? (
+                            <CheckSquare className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-400" />
+                          )}
+                        </button>
+                      </th>
                       <th className="py-3 px-4">Application ID</th>
                       <th className="py-3 px-4">Customer</th>
                       <th className="py-3 px-4">State / Type</th>
@@ -669,6 +883,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {loans.map((loan) => {
+                      const isSelected = selectedIds.includes(loan.id);
                       const customerName = loan.customer?.fullName || loan.customerName || 'Customer';
                       const mobile = loan.customer?.mobile || loan.mobile || '';
                       const state = loan.customer?.state || loan.state || 'India';
@@ -680,7 +895,25 @@ export const AdminLoanApprovalPage: React.FC = () => {
                       });
 
                       return (
-                        <tr key={loan.id} className="hover:bg-surface-elevated/60 transition-colors">
+                        <tr
+                          key={loan.id}
+                          className={`hover:bg-surface-elevated/60 transition-colors ${
+                            isSelected ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''
+                          }`}
+                        >
+                          <td className="w-10 py-3 px-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSelectRow(loan.id)}
+                              className="text-slate-500 hover:text-slate-800 transition flex items-center justify-center"
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="w-4 h-4 text-emerald-600" />
+                              ) : (
+                                <Square className="w-4 h-4 text-slate-300 hover:text-slate-500" />
+                              )}
+                            </button>
+                          </td>
                           <td className="py-3 px-4 font-mono font-bold text-text-primary">
                             {loan.applicationNumber}
                           </td>
@@ -1287,6 +1520,428 @@ export const AdminLoanApprovalPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ==================================================== */}
+      {/* BULK WHATSAPP CAMPAIGN MODAL */}
+      {/* ==================================================== */}
+      {isBulkWhatsAppModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-surface border border-border rounded-3xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-5">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-text-primary">
+                    Send WhatsApp Campaign
+                  </h3>
+                  <p className="text-xs text-text-secondary">
+                    Dispatch WhatsApp messages to {selectedIds.length} borrower(s) in {activeTab.toLowerCase()} queue
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBulkWhatsAppModalOpen(false)}
+                className="text-text-secondary hover:text-text-primary p-1.5 rounded-lg hover:bg-surface-elevated transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {bulkWhatsAppError && (
+              <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200 text-xs rounded-xl flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                <span>{bulkWhatsAppError}</span>
+              </div>
+            )}
+
+            {bulkWhatsAppCampaignResult ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-surface-elevated border border-border rounded-2xl space-y-3">
+                  <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    WhatsApp Campaign Completed
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="p-2.5 bg-surface rounded-xl border border-border">
+                      <span className="text-[10px] font-semibold text-text-secondary uppercase block">Total</span>
+                      <span className="text-lg font-extrabold text-text-primary">{bulkWhatsAppCampaignResult.total}</span>
+                    </div>
+                    <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                      <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase block">Sent</span>
+                      <span className="text-lg font-extrabold text-emerald-700 dark:text-emerald-400">{bulkWhatsAppCampaignResult.sentCount}</span>
+                    </div>
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-800">
+                      <span className="text-[10px] font-semibold text-rose-700 dark:text-rose-400 uppercase block">Failed</span>
+                      <span className="text-lg font-extrabold text-rose-700 dark:text-rose-400">{bulkWhatsAppCampaignResult.failedCount}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {bulkWhatsAppCampaignResult.results && bulkWhatsAppCampaignResult.results.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                      Delivery Log Breakdown
+                    </h5>
+                    <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                      {bulkWhatsAppCampaignResult.results.map((r, i) => (
+                        <div
+                          key={i}
+                          className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
+                            r.success
+                              ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                              : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+                          }`}
+                        >
+                          <div>
+                            <span className="font-semibold">{r.customerName}</span>
+                            <span className="text-[11px] opacity-75 font-mono ml-2">({r.recipient})</span>
+                            {r.error && (
+                              <p className="text-[11px] text-rose-600 mt-0.5">{r.error}</p>
+                            )}
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            r.success ? 'bg-emerald-200 text-emerald-800' : 'bg-rose-200 text-rose-800'
+                          }`}>
+                            {r.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 flex justify-end">
+                  <Button
+                    onClick={() => {
+                      setIsBulkWhatsAppModalOpen(false);
+                      setSelectedIds([]);
+                    }}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-6 py-2 rounded-xl"
+                  >
+                    Done
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Recipients preview */}
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary uppercase block mb-1.5">
+                    Recipients ({selectedLoans.length})
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-surface-elevated border border-border rounded-xl">
+                    {selectedLoans.map((loan) => (
+                      <span
+                        key={loan.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-surface border border-border rounded-lg text-[11px] font-medium text-text-primary"
+                      >
+                        <Users className="w-3 h-3 text-text-secondary" />
+                        {loan.customer?.fullName || loan.customerName} (+91 {loan.customer?.mobile || loan.mobile})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Template Selector */}
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary uppercase block mb-1">
+                    Message Template
+                  </label>
+                  <select
+                    value={bulkWhatsAppTemplateName}
+                    onChange={(e) => handleWhatsAppTemplateSelect(e.target.value)}
+                    className="w-full text-xs h-9 rounded-xl border border-input bg-background px-3 py-1.5 text-text-primary focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="APPLICATION_STATUS_UPDATE">Application Status Update (Default)</option>
+                    <option value="KYC_REMINDER">KYC Verification Reminder</option>
+                    <option value="APPROVAL_ALERT">Loan Sanction & Approval Alert</option>
+                    <option value="CUSTOM">Custom Free-form Message</option>
+                  </select>
+                </div>
+
+                {/* Message Body */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-text-secondary uppercase">
+                      Message Content
+                    </label>
+                    <span className="text-[10px] text-text-secondary font-mono">
+                      Dynamic placeholders supported
+                    </span>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={bulkWhatsAppMessage}
+                    onChange={(e) => setBulkWhatsAppMessage(e.target.value)}
+                    placeholder="Enter message template..."
+                    className="w-full p-3 text-xs border border-input bg-background text-text-primary rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono leading-relaxed"
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1 text-[10px] text-text-secondary">
+                    <span>Variables:</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{customerName}}'}</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{applicationId}}'}</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{loanStatus}}'}</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{amount}}'}</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{companyName}}'}</span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-2 border-t border-border flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkWhatsAppModalOpen(false)}
+                    disabled={isSendingBulkWhatsApp}
+                    className="px-4 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDispatchBulkWhatsApp}
+                    disabled={isSendingBulkWhatsApp || !bulkWhatsAppMessage.trim()}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow transition flex items-center gap-2"
+                  >
+                    {isSendingBulkWhatsApp ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Dispatching to {selectedIds.length} Borrowers...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        Send to {selectedIds.length} Borrowers
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* BULK EMAIL CAMPAIGN MODAL */}
+      {/* ==================================================== */}
+      {isBulkEmailModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-surface border border-border rounded-3xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-5">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 flex items-center justify-center">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-text-primary">
+                    Send Email Campaign
+                  </h3>
+                  <p className="text-xs text-text-secondary">
+                    Dispatch SMTP emails to {selectedIds.length} borrower(s) in {activeTab.toLowerCase()} queue
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBulkEmailModalOpen(false)}
+                className="text-text-secondary hover:text-text-primary p-1.5 rounded-lg hover:bg-surface-elevated transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {bulkEmailError && (
+              <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200 text-xs rounded-xl flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                <span>{bulkEmailError}</span>
+              </div>
+            )}
+
+            {bulkEmailCampaignResult ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-surface-elevated border border-border rounded-2xl space-y-3">
+                  <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                    Email Campaign Completed
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="p-2.5 bg-surface rounded-xl border border-border">
+                      <span className="text-[10px] font-semibold text-text-secondary uppercase block">Total</span>
+                      <span className="text-lg font-extrabold text-text-primary">{bulkEmailCampaignResult.total}</span>
+                    </div>
+                    <div className="p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800">
+                      <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-400 uppercase block">Sent</span>
+                      <span className="text-lg font-extrabold text-blue-700 dark:text-blue-400">{bulkEmailCampaignResult.sentCount}</span>
+                    </div>
+                    <div className="p-2.5 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-800">
+                      <span className="text-[10px] font-semibold text-rose-700 dark:text-rose-400 uppercase block">Failed</span>
+                      <span className="text-lg font-extrabold text-rose-700 dark:text-rose-400">{bulkEmailCampaignResult.failedCount}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {bulkEmailCampaignResult.results && bulkEmailCampaignResult.results.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                      Email Delivery Log Breakdown
+                    </h5>
+                    <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                      {bulkEmailCampaignResult.results.map((r, i) => (
+                        <div
+                          key={i}
+                          className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
+                            r.success
+                              ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200'
+                              : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+                          }`}
+                        >
+                          <div>
+                            <span className="font-semibold">{r.customerName}</span>
+                            <span className="text-[11px] opacity-75 font-mono ml-2">({r.recipient})</span>
+                            {r.error && (
+                              <p className="text-[11px] text-rose-600 mt-0.5">{r.error}</p>
+                            )}
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            r.success ? 'bg-blue-200 text-blue-800' : 'bg-rose-200 text-rose-800'
+                          }`}>
+                            {r.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 flex justify-end">
+                  <Button
+                    onClick={() => {
+                      setIsBulkEmailModalOpen(false);
+                      setSelectedIds([]);
+                    }}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-6 py-2 rounded-xl"
+                  >
+                    Done
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Recipients preview */}
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary uppercase block mb-1.5">
+                    Email Recipients ({selectedLoans.length})
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-surface-elevated border border-border rounded-xl">
+                    {selectedLoans.map((loan) => (
+                      <span
+                        key={loan.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-surface border border-border rounded-lg text-[11px] font-medium text-text-primary"
+                      >
+                        <Users className="w-3 h-3 text-text-secondary" />
+                        {loan.customer?.fullName || loan.customerName} ({loan.customer?.email || loan.email || 'No email'})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Template Selector */}
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary uppercase block mb-1">
+                    Email Template
+                  </label>
+                  <select
+                    value={bulkEmailTemplateName}
+                    onChange={(e) => handleEmailTemplateSelect(e.target.value)}
+                    className="w-full text-xs h-9 rounded-xl border border-input bg-background px-3 py-1.5 text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="APPLICATION_STATUS_UPDATE">Application Status Update (Default)</option>
+                    <option value="KYC_REMINDER">KYC Verification Reminder</option>
+                    <option value="APPROVAL_ALERT">Loan Sanction & Approval Alert</option>
+                    <option value="CUSTOM">Custom Free-form Email</option>
+                  </select>
+                </div>
+
+                {/* Subject Line */}
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary uppercase block mb-1">
+                    Subject Line
+                  </label>
+                  <Input
+                    type="text"
+                    value={bulkEmailSubject}
+                    onChange={(e) => setBulkEmailSubject(e.target.value)}
+                    placeholder="Enter email subject line..."
+                    className="w-full text-xs rounded-xl border-input bg-background text-text-primary focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Email Body */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-text-secondary uppercase">
+                      Email Body Content
+                    </label>
+                    <span className="text-[10px] text-text-secondary font-mono">
+                      Dynamic placeholders supported
+                    </span>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={bulkEmailMessage}
+                    onChange={(e) => setBulkEmailMessage(e.target.value)}
+                    placeholder="Enter email message content..."
+                    className="w-full p-3 text-xs border border-input bg-background text-text-primary rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono leading-relaxed"
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1 text-[10px] text-text-secondary">
+                    <span>Variables:</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{customerName}}'}</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{applicationId}}'}</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{loanStatus}}'}</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{amount}}'}</span>
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded font-mono">{'{{companyName}}'}</span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-2 border-t border-border flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkEmailModalOpen(false)}
+                    disabled={isSendingBulkEmail}
+                    className="px-4 py-2 text-xs font-semibold text-text-secondary hover:text-text-primary transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDispatchBulkEmail}
+                    disabled={isSendingBulkEmail || !bulkEmailMessage.trim() || !bulkEmailSubject.trim()}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow transition flex items-center gap-2"
+                  >
+                    {isSendingBulkEmail ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Dispatching Emails to {selectedIds.length} Borrowers...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        Send Emails to {selectedIds.length} Borrowers
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

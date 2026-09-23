@@ -41,10 +41,13 @@ router.get('/dashboard', requirePermission(['customers.view', 'applications.view
 
 // --- Customer Management Endpoints ---
 router.get('/customers', requirePermission('customers.view'), adminCustomerController.listCustomers);
+router.get('/customers/all-matching', requirePermission('customers.view'), adminCustomerController.getMatchingCustomers);
 router.get('/customers/states', requirePermission('customers.view'), adminCustomerController.listStates);
 router.get('/customers/export', requirePermission(['customers.view', 'reports.export']), adminCustomerController.exportCsv);
 router.post('/customers/manual', requirePermission('customers.create'), adminCustomerController.manualCreateCustomer);
 router.get('/customers/:id', requirePermission('customers.view'), adminCustomerController.getCustomer360);
+router.patch('/customers/:id/deactivate', requirePermission(['customers.delete', 'customers.edit']), adminCustomerController.deactivateCustomer);
+router.patch('/customers/:id/reactivate', requirePermission(['customers.delete', 'customers.edit']), adminCustomerController.reactivateCustomer);
 router.post('/customers/:id/whatsapp/pending', requirePermission('communication.whatsapp'), adminCustomerController.sendWhatsAppPending);
 router.get('/customers/:id/whatsapp/history', requirePermission('communication.history'), adminCustomerController.getWhatsAppHistory);
 router.get('/customers/:id/invoice/pdf', requirePermission(['charges.view', 'payments.view']), adminCustomerController.downloadInvoicePdf);
@@ -126,11 +129,13 @@ router.get('/settings/email', requirePermission('settings.view'), settingsContro
 router.patch('/settings/email', requirePermission('settings.manage'), settingsController.updateEmailSettings);
 router.put('/settings/email', requirePermission('settings.manage'), settingsController.updateEmailSettings);
 router.post('/settings/email/test', requirePermission('settings.manage'), settingsController.sendTestEmail);
+router.post('/settings/email/test-connection', requirePermission('settings.manage'), settingsController.testEmailConnection);
 
 router.get('/settings/whatsapp', requirePermission('settings.view'), settingsController.getWhatsAppSettings);
 router.patch('/settings/whatsapp', requirePermission('settings.manage'), settingsController.updateWhatsAppSettings);
 router.put('/settings/whatsapp', requirePermission('settings.manage'), settingsController.updateWhatsAppSettings);
 router.post('/settings/whatsapp/test', requirePermission('settings.manage'), settingsController.sendTestWhatsApp);
+router.post('/settings/whatsapp/test-connection', requirePermission('settings.manage'), settingsController.testWhatsAppConnection);
 
 router.get('/settings/payment', requirePermission('settings.view'), settingsController.getPaymentConfig);
 router.patch('/settings/payment', requirePermission('settings.manage'), settingsController.updatePaymentConfig);
@@ -205,12 +210,19 @@ router.get('/communication/customers', requirePermission(['customers.view', 'com
 router.get('/communication/templates', requirePermission(['communication.email', 'communication.whatsapp']), (req, res) => communicationController.getTemplates(req, res));
 router.post('/communication/email', requirePermission('communication.email'), (req, res, next) => communicationController.sendCustomerEmail(req, res, next));
 router.post('/communication/email/bulk', requirePermission('communication.email'), (req, res, next) => communicationController.sendCustomerEmail(req, res, next));
+router.post('/communication/email/bulk-applications', requirePermission('communication.email'), (req, res, next) => communicationController.sendBulkApplicationEmail(req, res, next));
+router.post('/loan-applications/bulk-email', requirePermission(['applications.view', 'communication.email']), (req, res, next) => communicationController.sendBulkApplicationEmail(req, res, next));
+router.post('/email/bulk-send', requirePermission('communication.email'), (req, res, next) => communicationController.sendCustomerEmail(req, res, next));
 router.post('/communication/email/invoice', requirePermission('communication.email'), (req, res, next) => communicationController.sendInvoiceEmail(req, res, next));
 router.post('/communication/email/approval-letter', requirePermission('communication.email'), (req, res, next) => communicationController.sendApprovalLetterEmail(req, res, next));
 router.post('/communication/whatsapp', requirePermission('communication.whatsapp'), (req, res, next) => communicationController.sendWhatsAppMessage(req, res, next));
 router.post('/communication/whatsapp/bulk', requirePermission('communication.whatsapp'), (req, res, next) => communicationController.sendBulkWhatsApp(req, res, next));
+router.post('/communication/whatsapp/bulk-applications', requirePermission('communication.whatsapp'), (req, res, next) => communicationController.sendBulkApplicationWhatsApp(req, res, next));
+router.post('/loan-applications/bulk-whatsapp', requirePermission(['applications.view', 'communication.whatsapp']), (req, res, next) => communicationController.sendBulkApplicationWhatsApp(req, res, next));
+router.post('/whatsapp/bulk-send', requirePermission('communication.whatsapp'), (req, res, next) => communicationController.sendBulkWhatsApp(req, res, next));
 router.get('/communication/history', requirePermission('communication.history'), (req, res, next) => communicationController.getCommunicationHistory(req, res, next));
 router.get('/communication/history/customer/:customerId', requirePermission('communication.history'), (req, res, next) => communicationController.getCustomerHistory(req, res, next));
+
 
 // --- Settings: Communication Automated Event Triggers ---
 router.get('/settings/communication', requirePermission('settings.view'), async (req, res, next) => {

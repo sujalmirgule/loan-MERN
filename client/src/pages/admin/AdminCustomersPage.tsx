@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
+import { adminService } from '@/services/adminService';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,10 @@ import {
   History,
   AlertCircle,
   Check,
+  Ban,
+  UserCheck,
+  Mail,
+  CheckSquare,
 } from 'lucide-react';
 
 interface CustomerRecord {
@@ -50,6 +55,9 @@ interface CustomerRecord {
   monthlyIncome: number;
   kycStatus: string;
   accountStatus: string;
+  status: string;
+  isActive?: boolean;
+  isDeleted?: boolean;
   loanStatus: string;
   paymentStatus: string;
   latestLoan?: {
@@ -117,14 +125,60 @@ export const AdminCustomersPage: React.FC = () => {
   const [appliedFromDate, setAppliedFromDate] = useState('');
   const [appliedToDate, setAppliedToDate] = useState('');
 
+  // Row selection state (supports multi-page unpaginated selection)
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
+  const [selectedCustomersMap, setSelectedCustomersMap] = useState<Record<string, CustomerRecord>>({});
+  const [isLoadingSelectAllMatching, setIsLoadingSelectAllMatching] = useState(false);
+
   // Row Action Dropdown state
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
-  // WhatsApp Modal state
+  // Single Customer WhatsApp Modal state
   const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<CustomerRecord | null>(null);
   const [whatsAppMessageText, setWhatsAppMessageText] = useState('');
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
+
+  // Bulk WhatsApp Modal state
+  const [isBulkWhatsAppOpen, setIsBulkWhatsAppOpen] = useState(false);
+  const [bulkWhatsAppMessage, setBulkWhatsAppMessage] = useState(
+    'Hello {{customerName}},\n\nYour loan application {{applicationId}} is currently {{loanStatus}}.\n\nThank you,\n{{companyName}}'
+  );
+  const [isSendingBulkWhatsApp, setIsSendingBulkWhatsApp] = useState(false);
+
+  // Bulk Email Modal state
+  const [isBulkEmailOpen, setIsBulkEmailOpen] = useState(false);
+  const [bulkEmailSubject, setBulkEmailSubject] = useState('Important Update Regarding Your Loan Application');
+  const [bulkEmailMessage, setBulkEmailMessage] = useState(
+    'Dear {{customerName}},\n\nThis is an update regarding your loan application {{applicationId}}.\n\nCurrent Status: {{loanStatus}}\nLoan Amount: ₹{{loanAmount}}\n\nPlease contact our desk if you have any questions.\n\nWarm regards,\n{{companyName}} Team'
+  );
+  const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
+
+  // Campaign Results Summary Modal
+  const [campaignResult, setCampaignResult] = useState<{
+    type: 'WhatsApp' | 'Email';
+    total: number;
+    sentCount: number;
+    failedCount: number;
+    results: Array<{
+      customerId?: string;
+      customerName?: string;
+      recipient?: string;
+      phone?: string;
+      status: string;
+      success?: boolean;
+      error?: string;
+      failureReason?: string;
+    }>;
+  } | null>(null);
+
+  // Customer Deactivation & Reactivation Modal state
+  const [customerToDeactivate, setCustomerToDeactivate] = useState<CustomerRecord | null>(null);
+  const [deactivateReason, setDeactivateReason] = useState('');
+  const [isDeactivating, setIsDeactivating] = useState(false);
+
+  const [customerToReactivate, setCustomerToReactivate] = useState<CustomerRecord | null>(null);
+  const [isReactivating, setIsReactivating] = useState(false);
 
   // WhatsApp History Modal state
   const [selectedCustomerForHistory, setSelectedCustomerForHistory] = useState<CustomerRecord | null>(null);
@@ -137,6 +191,12 @@ export const AdminCustomersPage: React.FC = () => {
 
   // Global inline feedback message
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Selection safety: Reset selection when search, filter, or page changes
+  useEffect(() => {
+    setSelectedCustomerIds([]);
+    setSelectedCustomersMap({});
+  }, [search, status, stateFilter, domainFilter, datePreset, appliedFromDate, appliedToDate, page]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -166,18 +226,6 @@ export const AdminCustomersPage: React.FC = () => {
     },
   });
 
-  // Load domains for the domain filter dropdown
-  const { data: domainsList = [] } = useQuery<Array<{ id: string; domainName: string; isActive: boolean }>>(
-    {
-      queryKey: ['adminDomains-filter'],
-      queryFn: async () => {
-        const res = await apiClient.get(API_ENDPOINTS.DOMAINS.LIST);
-        const list = res.data?.data || res.data || [];
-        return Array.isArray(list) ? list : [];
-      },
-    }
-  );
-
   // Load customers with real server-side filters & pagination
   const { data, isLoading, isFetching, refetch } = useQuery<CustomersListResponse>({
     queryKey: ['admin-customers', page, search, status, stateFilter, appliedFromDate, appliedToDate, domainFilter],
@@ -196,11 +244,76 @@ export const AdminCustomersPage: React.FC = () => {
       });
       return res;
     },
-    refetchInterval: 1500,
+    refetchInterval: 3000,
   });
 
   const customers = data?.data || [];
   const pagination = data?.pagination || { total: 0, page: 1, limit: 10, totalPages: 1 };
+
+  // Selectable customers (strictly excluding deactivated)
+  const selectableCustomers = customers.filter(
+    (c) => c.accountStatus !== 'DEACTIVATED' && c.status !== 'DEACTIVATED' && c.isActive !== false
+  );
+  const isAllSelected =
+    selectableCustomers.length > 0 && selectableCustomers.every((c) => selectedCustomerIds.includes(c.id));
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      const pageIds = selectableCustomers.map((c) => c.id);
+      setSelectedCustomerIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+    } else {
+      const pageIds = selectableCustomers.map((c) => c.id);
+      const newMap: Record<string, CustomerRecord> = { ...selectedCustomersMap };
+      selectableCustomers.forEach((c) => {
+        newMap[c.id] = c;
+      });
+      setSelectedCustomersMap(newMap);
+      setSelectedCustomerIds((prev) => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleToggleCustomerRow = (customer: CustomerRecord) => {
+    const customerId = customer.id;
+    if (selectedCustomerIds.includes(customerId)) {
+      setSelectedCustomerIds((prev) => prev.filter((id) => id !== customerId));
+    } else {
+      setSelectedCustomersMap((prev) => ({ ...prev, [customerId]: customer }));
+      setSelectedCustomerIds((prev) => [...prev, customerId]);
+    }
+  };
+
+  // Select All Matching across all pages (unpaginated)
+  const handleSelectAllMatching = async () => {
+    setIsLoadingSelectAllMatching(true);
+    try {
+      const res = await adminService.getAllMatchingCustomers({
+        search: search.trim() || undefined,
+        status: status !== 'ALL' ? status : undefined,
+        state: stateFilter !== 'ALL' ? stateFilter : undefined,
+        fromDate: appliedFromDate || undefined,
+        toDate: appliedToDate || undefined,
+        domainId: domainFilter !== 'ALL' ? domainFilter : undefined,
+      });
+      const allMatching = res.data || [];
+      const newMap: Record<string, CustomerRecord> = { ...selectedCustomersMap };
+      allMatching.forEach((c) => {
+        newMap[c.id] = c;
+      });
+      setSelectedCustomersMap(newMap);
+      setSelectedCustomerIds(allMatching.map((c) => c.id));
+      setFeedback({
+        type: 'success',
+        message: `Selected all ${allMatching.length} matching customers across all pages.`,
+      });
+    } catch (err: unknown) {
+      setFeedback({
+        type: 'error',
+        message: 'Failed to select all matching customers.',
+      });
+    } finally {
+      setIsLoadingSelectAllMatching(false);
+    }
+  };
 
   // Handle Preset Date Selection
   const handleDatePresetChange = (preset: string) => {
@@ -262,19 +375,20 @@ export const AdminCustomersPage: React.FC = () => {
     setCustomTo('');
     setAppliedFromDate('');
     setAppliedToDate('');
+    setSelectedCustomerIds([]);
     setPage(1);
   };
 
-  // WhatsApp Message Composer Helper
+  // Single Customer WhatsApp Helper
   const openWhatsAppModal = (customer: CustomerRecord) => {
     const loanRef = customer.latestLoan?.applicationNumber || 'Application';
-    const defaultMsg = `Hello ${customer.fullName},\n\nYour loan application ${loanRef} is currently pending approval.\n\nWe will update you once the application has been reviewed.\n\nThank you,\nZero Booth Financial`;
+    const defaultMsg = `Hello ${customer.fullName},\n\nYour loan application ${loanRef} is currently pending approval.\n\nWe will update you once the application has been reviewed.\n\nThank you,\nLoan Approve Financial Services`;
     setWhatsAppMessageText(defaultMsg);
     setSelectedCustomerForWhatsApp(customer);
     setOpenActionMenuId(null);
   };
 
-  // Submit WhatsApp Pending Message
+  // Single Customer WhatsApp Dispatch
   const handleSendWhatsApp = async () => {
     if (!selectedCustomerForWhatsApp) return;
     setIsSendingWhatsApp(true);
@@ -304,6 +418,108 @@ export const AdminCustomersPage: React.FC = () => {
     }
   };
 
+  // Bulk WhatsApp Dispatch
+  const handleSendBulkWhatsApp = async () => {
+    if (selectedCustomerIds.length === 0) return;
+    setIsSendingBulkWhatsApp(true);
+    try {
+      const res = await adminService.bulkSendWhatsApp({
+        customerIds: selectedCustomerIds,
+        message: bulkWhatsAppMessage,
+      });
+
+      const data = res.data;
+      setCampaignResult({
+        type: 'WhatsApp',
+        total: data.total || selectedCustomerIds.length,
+        sentCount: data.sentCount || 0,
+        failedCount: data.failedCount || 0,
+        results: data.results || [],
+      });
+
+      setIsBulkWhatsAppOpen(false);
+      setSelectedCustomerIds([]);
+      refetch();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to dispatch bulk WhatsApp messages';
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setIsSendingBulkWhatsApp(false);
+    }
+  };
+
+  // Bulk Email Dispatch
+  const handleSendBulkEmail = async () => {
+    if (selectedCustomerIds.length === 0) return;
+    setIsSendingBulkEmail(true);
+    try {
+      const res = await adminService.bulkSendEmail({
+        customerIds: selectedCustomerIds,
+        subject: bulkEmailSubject,
+        message: bulkEmailMessage,
+      });
+
+      const data = res.data;
+      setCampaignResult({
+        type: 'Email',
+        total: data.total || selectedCustomerIds.length,
+        sentCount: data.sentCount || 0,
+        failedCount: data.failedCount || 0,
+        results: data.results || [],
+      });
+
+      setIsBulkEmailOpen(false);
+      setSelectedCustomerIds([]);
+      refetch();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to dispatch bulk emails';
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setIsSendingBulkEmail(false);
+    }
+  };
+
+  // Deactivate Customer Dispatch
+  const handleDeactivateCustomer = async () => {
+    if (!customerToDeactivate) return;
+    setIsDeactivating(true);
+    try {
+      const res = await adminService.deactivateCustomer(customerToDeactivate.id, deactivateReason);
+      setFeedback({
+        type: 'success',
+        message: res.message || `Customer ${customerToDeactivate.fullName} has been deactivated.`,
+      });
+      setCustomerToDeactivate(null);
+      setDeactivateReason('');
+      refetch();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to deactivate customer account';
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setIsDeactivating(false);
+    }
+  };
+
+  // Reactivate Customer Dispatch
+  const handleReactivateCustomer = async () => {
+    if (!customerToReactivate) return;
+    setIsReactivating(true);
+    try {
+      const res = await adminService.reactivateCustomer(customerToReactivate.id);
+      setFeedback({
+        type: 'success',
+        message: res.message || `Customer ${customerToReactivate.fullName} has been reactivated.`,
+      });
+      setCustomerToReactivate(null);
+      refetch();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to reactivate customer account';
+      setFeedback({ type: 'error', message: msg });
+    } finally {
+      setIsReactivating(false);
+    }
+  };
+
   // Open WhatsApp History Modal
   const openWhatsAppHistory = async (customer: CustomerRecord) => {
     setSelectedCustomerForHistory(customer);
@@ -320,7 +536,7 @@ export const AdminCustomersPage: React.FC = () => {
     }
   };
 
-  // Export Filtered CSV (Real Backend Stream)
+  // Export Filtered CSV
   const handleExportCsv = async () => {
     setIsExportingCsv(true);
     try {
@@ -409,27 +625,36 @@ export const AdminCustomersPage: React.FC = () => {
   };
 
   // Status Badges
-  const getStatusBadge = (s: string) => {
+  const getStatusBadge = (c: CustomerRecord) => {
+    if (c.accountStatus === 'DEACTIVATED' || c.status === 'DEACTIVATED' || c.isActive === false) {
+      return (
+        <Badge variant="destructive" className="bg-rose-50 text-rose-700 border-rose-200 font-bold text-[10px]">
+          DEACTIVATED
+        </Badge>
+      );
+    }
+
+    const s = c.latestLoan?.status || c.kycStatus || c.accountStatus;
     switch (s?.toUpperCase()) {
       case 'APPROVED':
-        return <Badge className="bg-success text-background text-text-primary text-[10px]">Approved</Badge>;
+        return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-[10px]">Approved</Badge>;
       case 'UNDER_REVIEW':
-        return <Badge className="bg-warning text-background text-text-primary text-[10px]">In Review</Badge>;
+        return <Badge className="bg-blue-50 text-blue-700 border-blue-200 font-bold text-[10px]">In Review</Badge>;
       case 'PENDING':
       case 'PENDING_APPROVAL':
       case 'SUBMITTED':
-        return <Badge className="bg-amber-500 text-text-primary text-[10px]">Pending Approval</Badge>;
+        return <Badge className="bg-amber-50 text-amber-700 border-amber-200 font-bold text-[10px]">Pending Approval</Badge>;
       case 'DISBURSED':
-        return <Badge className="bg-primary text-background text-text-primary text-[10px]">Disbursed</Badge>;
+        return <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 font-bold text-[10px]">Disbursed</Badge>;
       case 'REUPLOAD_REQUIRED':
       case 'DOCUMENTS_REQUIRED':
-        return <Badge className="bg-orange-600 text-text-primary text-[10px]">Docs Req</Badge>;
+        return <Badge className="bg-orange-50 text-orange-700 border-orange-200 font-bold text-[10px]">Docs Req</Badge>;
       case 'REJECTED':
-        return <Badge className="bg-red-600 text-text-primary text-[10px]">Rejected</Badge>;
+        return <Badge className="bg-rose-50 text-rose-700 border-rose-200 font-bold text-[10px]">Rejected</Badge>;
       case 'ACTIVE':
-        return <Badge className="bg-emerald-700 text-text-primary text-[10px]">Active</Badge>;
+        return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-[10px]">Active</Badge>;
       default:
-        return <Badge variant="secondary" className="text-[10px]">{s || 'N/A'}</Badge>;
+        return <Badge variant="secondary" className="font-semibold text-[10px]">{s || 'N/A'}</Badge>;
     }
   };
 
@@ -478,16 +703,23 @@ export const AdminCustomersPage: React.FC = () => {
 
   const isPendingSection = status === 'PENDING_APPROVAL';
 
+  // Selected customer objects & names for composers (resolved across all pages)
+  const selectedCustomerObjects = selectedCustomerIds
+    .map((id) => selectedCustomersMap[id] || customers.find((c) => c.id === id))
+    .filter((c): c is CustomerRecord => Boolean(c));
+
+  const selectedCustomerNames = selectedCustomerObjects.map((c) => c.fullName);
+
   return (
     <div className="space-y-6">
       {/* Top Banner & Title */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-border">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-text-primary flex items-center space-x-2">
-            <Users className="w-6 h-6 text-success" />
+          <h1 className="text-2xl font-bold tracking-tight text-[#0F172A] flex items-center space-x-2">
+            <Users className="w-6 h-6 text-[#2563EB]" />
             <span>Borrower Directory & Customer Records</span>
           </h1>
-          <p className="text-xs sm:text-sm text-text-secondary">
+          <p className="text-xs sm:text-sm text-[#64748B] font-medium mt-0.5">
             Comprehensive registry of registered borrowers, verification states, credit applications, and communications.
           </p>
         </div>
@@ -497,9 +729,9 @@ export const AdminCustomersPage: React.FC = () => {
             variant="outline"
             onClick={handleExportCsv}
             disabled={isExportingCsv}
-            className="bg-surface-elevated border-border text-text-primary hover:bg-surface-elevated hover:brightness-110 text-xs h-8"
+            className="border-[#D6E4F5] bg-white text-[#0F172A] hover:bg-[#EFF6FF] text-xs h-8 font-semibold"
           >
-            <Download className="w-3.5 h-3.5 mr-1.5 text-success" />
+            <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
             {isExportingCsv ? 'Exporting...' : 'Export CSV'}
           </Button>
           <Button
@@ -507,7 +739,7 @@ export const AdminCustomersPage: React.FC = () => {
             variant="outline"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="bg-surface-elevated border-border text-text-primary hover:bg-surface-elevated hover:brightness-110 text-xs h-8"
+            className="border-[#D6E4F5] bg-white text-[#0F172A] hover:bg-[#EFF6FF] text-xs h-8 font-semibold"
           >
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isFetching ? 'animate-spin' : ''}`} />
             Refresh
@@ -518,23 +750,23 @@ export const AdminCustomersPage: React.FC = () => {
       {/* Inline Feedback Banner */}
       {feedback && (
         <div
-          className={`p-3.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
+          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between transition-all font-semibold ${
             feedback.type === 'success'
-              ? 'bg-success/10 border-success/30 text-success'
-              : 'bg-danger/10 border-danger/30 text-danger'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-red-50 border-red-200 text-red-800'
           }`}
         >
           <div className="flex items-center space-x-2">
             {feedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-danger shrink-0" />
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
             )}
             <span>{feedback.message}</span>
           </div>
           <button
             onClick={() => setFeedback(null)}
-            className="text-text-secondary hover:text-text-primary font-bold ml-4"
+            className="text-slate-500 hover:text-slate-800 font-bold ml-4"
           >
             ×
           </button>
@@ -542,29 +774,33 @@ export const AdminCustomersPage: React.FC = () => {
       )}
 
       {/* Main Container Card */}
-      <Card className="bg-surface-elevated border border-border shadow-sm">
-        <CardHeader className="pb-3 border-b border-border">
+      <Card className="bg-white border border-[#D6E4F5] shadow-xs">
+        <CardHeader className="pb-3 border-b border-[#D6E4F5]">
           <div className="flex flex-col space-y-3">
-            {/* Header & Section Switcher */}
+            {/* Header & Status Filter Switcher */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center space-x-3">
-                <CardTitle className="text-base text-text-primary">
+              <div className="flex flex-wrap items-center gap-3">
+                <CardTitle className="text-base font-bold text-[#0F172A]">
                   {isPendingSection
                     ? `Pending Approval Queue (${pagination.total})`
+                    : status === 'ACTIVE'
+                    ? `Active Borrowers (${pagination.total})`
+                    : status === 'DEACTIVATED'
+                    ? `Deactivated Borrowers (${pagination.total})`
                     : `All Registered Borrowers (${pagination.total})`}
                 </CardTitle>
 
-                {/* Quick Toggle for Requirement 4: Pending Approval Section */}
-                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs">
+                {/* Status Filter Tabs */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs gap-1 border border-slate-200">
                   <button
                     onClick={() => {
                       setStatus('ALL');
                       setPage(1);
                     }}
-                    className={`px-2.5 py-1 rounded-md transition-colors ${
-                      status !== 'PENDING_APPROVAL'
-                        ? 'bg-white text-slate-900 font-semibold shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                    className={`px-3 py-1 rounded-lg transition-colors font-semibold ${
+                      status === 'ALL'
+                        ? 'bg-white text-[#0F172A] shadow-xs font-bold'
+                        : 'text-slate-600 hover:text-[#0F172A]'
                     }`}
                   >
                     All Borrowers
@@ -574,16 +810,62 @@ export const AdminCustomersPage: React.FC = () => {
                       setStatus('PENDING_APPROVAL');
                       setPage(1);
                     }}
-                    className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1.5 ${
+                    className={`px-3 py-1 rounded-lg transition-colors flex items-center gap-1.5 font-semibold ${
                       status === 'PENDING_APPROVAL'
-                        ? 'bg-amber-500 text-text-primary font-semibold shadow-xs'
-                        : 'text-amber-700 hover:text-amber-900 font-medium'
+                        ? 'bg-amber-500 text-white shadow-xs font-bold'
+                        : 'text-amber-700 hover:text-amber-900'
                     }`}
                   >
                     <Clock className="w-3 h-3" />
                     Pending Approval
                   </button>
+                  <button
+                    onClick={() => {
+                      setStatus('ACTIVE');
+                      setPage(1);
+                    }}
+                    className={`px-3 py-1 rounded-lg transition-colors font-semibold ${
+                      status === 'ACTIVE'
+                        ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                        : 'text-emerald-700 hover:text-emerald-900'
+                    }`}
+                  >
+                    Active
+                  </button>
+                  <button
+                    onClick={() => {
+                      setStatus('DEACTIVATED');
+                      setPage(1);
+                    }}
+                    className={`px-3 py-1 rounded-lg transition-colors font-semibold ${
+                      status === 'DEACTIVATED'
+                        ? 'bg-rose-600 text-white shadow-xs font-bold'
+                        : 'text-rose-700 hover:text-rose-900'
+                    }`}
+                  >
+                    Deactivated
+                  </button>
                 </div>
+
+                {/* Quick Select All Matching Button */}
+                {pagination.total > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSelectAllMatching}
+                    disabled={isLoadingSelectAllMatching}
+                    className="h-8 text-xs font-bold border-[#CBDDE9] bg-white hover:bg-[#EFF6FF] text-[#2563EB] shadow-xs flex items-center gap-1.5"
+                  >
+                    {isLoadingSelectAllMatching ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <CheckSquare className="w-3.5 h-3.5" />
+                    )}
+                    {status === 'PENDING_APPROVAL'
+                      ? `Select All Pending (${pagination.total})`
+                      : `Select All Matching (${pagination.total})`}
+                  </Button>
+                )}
               </div>
 
               {/* Reset button if any filter applied */}
@@ -592,7 +874,7 @@ export const AdminCustomersPage: React.FC = () => {
                   size="sm"
                   variant="ghost"
                   onClick={handleResetFilters}
-                  className="text-xs h-7 text-text-secondary hover:text-slate-800 self-start sm:self-auto"
+                  className="text-xs h-7 text-[#64748B] hover:text-[#0F172A] font-semibold self-start sm:self-auto"
                 >
                   <RotateCcw className="w-3 h-3 mr-1" />
                   Reset Filters
@@ -604,7 +886,7 @@ export const AdminCustomersPage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 pt-1">
               {/* Search Customer Input */}
               <div className="relative lg:col-span-2">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-text-secondary" />
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#64748B]" />
                 <Input
                   placeholder="Search customer, mobile, email..."
                   value={search}
@@ -612,7 +894,7 @@ export const AdminCustomersPage: React.FC = () => {
                     setSearch(e.target.value);
                     setPage(1);
                   }}
-                  className="text-xs h-8 pl-8 w-full bg-white"
+                  className="text-xs h-8 pl-8 w-full bg-white font-medium"
                 />
               </div>
 
@@ -622,7 +904,7 @@ export const AdminCustomersPage: React.FC = () => {
                   aria-label="Filter by registration/application date"
                   value={datePreset}
                   onChange={(e) => handleDatePresetChange(e.target.value)}
-                  className="text-xs h-8 px-2.5 w-full rounded-md border border-input bg-white text-slate-800 shadow-xs focus:ring-1 focus:ring-emerald-500"
+                  className="text-xs h-8 px-2.5 w-full rounded-xl border border-[#CBDDE9] bg-white text-[#0F172A] font-semibold shadow-xs focus:ring-1 focus:ring-[#2563EB]"
                 >
                   <option value="ALL">Date: All Time</option>
                   <option value="TODAY">Today</option>
@@ -642,7 +924,7 @@ export const AdminCustomersPage: React.FC = () => {
                     setStateFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="text-xs h-8 px-2.5 w-full rounded-md border border-input bg-white text-slate-800 shadow-xs focus:ring-1 focus:ring-emerald-500"
+                  className="text-xs h-8 px-2.5 w-full rounded-xl border border-[#CBDDE9] bg-white text-[#0F172A] font-semibold shadow-xs focus:ring-1 focus:ring-[#2563EB]"
                 >
                   <option value="ALL">State: All States</option>
                   {statesList.map((st) => (
@@ -662,7 +944,7 @@ export const AdminCustomersPage: React.FC = () => {
                     setStatus(e.target.value);
                     setPage(1);
                   }}
-                  className="text-xs h-8 px-2.5 w-full rounded-md border border-input bg-white text-slate-800 shadow-xs focus:ring-1 focus:ring-emerald-500"
+                  className="text-xs h-8 px-2.5 w-full rounded-xl border border-[#CBDDE9] bg-white text-[#0F172A] font-semibold shadow-xs focus:ring-1 focus:ring-[#2563EB]"
                 >
                   <option value="ALL">Status: All Statuses</option>
                   <option value="PENDING_APPROVAL">Pending Approval</option>
@@ -671,58 +953,37 @@ export const AdminCustomersPage: React.FC = () => {
                   <option value="REJECTED">Rejected</option>
                   <option value="DISBURSED">Disbursed</option>
                   <option value="ACTIVE">Active</option>
+                  <option value="DEACTIVATED">Deactivated</option>
                 </select>
               </div>
-
-              {/* Domain / Website Filter Dropdown */}
-              {domainsList.length > 0 && (
-                <div className="flex items-center space-x-1.5">
-                  <select
-                    aria-label="Filter by originating domain"
-                    value={domainFilter}
-                    onChange={(e) => {
-                      setDomainFilter(e.target.value);
-                      setPage(1);
-                    }}
-                    className="text-xs h-8 px-2.5 w-full rounded-md border border-input bg-white text-slate-800 shadow-xs focus:ring-1 focus:ring-indigo-500"
-                  >
-                    <option value="ALL">Domain: All Websites</option>
-                    {domainsList.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.domainName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
 
-            {/* Requirement 1: Custom Date Range Picker Bar (Shown when Custom is selected) */}
+            {/* Custom Date Range Picker Bar */}
             {datePreset === 'CUSTOM' && (
-              <div className="flex flex-wrap items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs mt-1">
+              <div className="flex flex-wrap items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs mt-1">
                 <div className="flex items-center space-x-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-text-secondary" />
-                  <span className="text-slate-600 font-medium">From:</span>
+                  <Calendar className="w-3.5 h-3.5 text-[#64748B]" />
+                  <span className="text-slate-700 font-semibold">From:</span>
                   <input
                     type="date"
                     value={customFrom}
                     onChange={(e) => setCustomFrom(e.target.value)}
-                    className="h-7 px-2 text-xs border border-slate-300 rounded bg-white"
+                    className="h-7 px-2 text-xs border border-slate-300 rounded bg-white font-medium"
                   />
                 </div>
                 <div className="flex items-center space-x-1.5">
-                  <span className="text-slate-600 font-medium">To:</span>
+                  <span className="text-slate-700 font-semibold">To:</span>
                   <input
                     type="date"
                     value={customTo}
                     onChange={(e) => setCustomTo(e.target.value)}
-                    className="h-7 px-2 text-xs border border-slate-300 rounded bg-white"
+                    className="h-7 px-2 text-xs border border-slate-300 rounded bg-white font-medium"
                   />
                 </div>
                 <Button
                   size="sm"
                   onClick={handleApplyCustomDates}
-                  className="h-7 px-3 text-xs bg-success text-background text-text-primary hover:brightness-110"
+                  className="h-7 px-3 text-xs bg-[#2563EB] text-white hover:bg-[#1D4ED8] font-semibold"
                 >
                   Apply Dates
                 </Button>
@@ -737,15 +998,10 @@ export const AdminCustomersPage: React.FC = () => {
                     setDatePreset('ALL');
                     setPage(1);
                   }}
-                  className="h-7 px-2.5 text-xs text-slate-600"
+                  className="h-7 px-2.5 text-xs text-slate-600 font-medium"
                 >
                   Clear
                 </Button>
-                {appliedFromDate && (
-                  <span className="text-[11px] text-emerald-700 font-medium ml-auto">
-                    Active: {appliedFromDate} to {appliedToDate || 'Today'}
-                  </span>
-                )}
               </div>
             )}
           </div>
@@ -753,51 +1009,123 @@ export const AdminCustomersPage: React.FC = () => {
 
         {/* Customer Table Container */}
         <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-left text-xs text-text-secondary">
-            <thead className="bg-surface text-text-secondary font-bold uppercase tracking-wider text-[10px] border-b border-border">
+          {/* Select All Matching Banner across pagination */}
+          {selectedCustomerIds.length > 0 && pagination.total > selectableCustomers.length && (
+            <div className="bg-[#EFF6FF] border-b border-[#BFDBFE] px-4 py-2.5 text-xs text-[#1E3A8A] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#2563EB]" />
+                <span>
+                  {selectedCustomerIds.length === pagination.total ? (
+                    <>All <strong>{pagination.total}</strong> {status === 'PENDING_APPROVAL' ? 'pending' : 'matching'} customers across all pages are currently selected.</>
+                  ) : (
+                    <>
+                      <strong>{selectedCustomerIds.length}</strong> customer{selectedCustomerIds.length > 1 ? 's' : ''} on this page selected.{' '}
+                      Would you like to select all <strong>{pagination.total}</strong> {status === 'PENDING_APPROVAL' ? 'pending' : 'matching'} customers?
+                    </>
+                  )}
+                </span>
+              </div>
+              {selectedCustomerIds.length !== pagination.total && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSelectAllMatching}
+                  disabled={isLoadingSelectAllMatching}
+                  className="h-7 text-xs bg-white text-[#2563EB] border-[#93C5FD] hover:bg-[#DBEAFE] font-bold shadow-xs flex items-center gap-1.5"
+                >
+                  {isLoadingSelectAllMatching ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <CheckSquare className="w-3.5 h-3.5" />
+                  )}
+                  {status === 'PENDING_APPROVAL'
+                    ? `Select All Pending (${pagination.total})`
+                    : `Select All Matching (${pagination.total})`}
+                </Button>
+              )}
+            </div>
+          )}
+
+          <table className="w-full text-left text-xs text-[#334155]">
+            <thead className="bg-[#F7FAFF] text-[#334155] font-bold uppercase tracking-wider text-[11px] border-b border-[#D6E4F5]">
               <tr>
-                <th className="py-3 px-4">Customer Name</th>
-                <th className="py-3 px-4">Mobile</th>
-                <th className="py-3 px-4">Loan / App ID</th>
-                <th className="py-3 px-4">Location</th>
-                <th className="py-3 px-4">Loan Type & Amount</th>
-                <th className="py-3 px-4">Application Date</th>
-                <th className="py-3 px-4">Pending Since</th>
-                <th className="py-3 px-4">Current Status</th>
-                <th className="py-3 px-4">WhatsApp</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+                <th className="py-3 px-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={handleToggleSelectAll}
+                    disabled={selectableCustomers.length === 0}
+                    title="Select All on this page"
+                    className="w-4 h-4 rounded border-[#CBDDE9] text-[#2563EB] focus:ring-[#2563EB] cursor-pointer"
+                  />
+                </th>
+                <th className="py-3 px-4 font-bold">Customer Name</th>
+                <th className="py-3 px-4 font-bold">Mobile</th>
+                <th className="py-3 px-4 font-bold">Loan / App ID</th>
+                <th className="py-3 px-4 font-bold">Location</th>
+                <th className="py-3 px-4 font-bold">Loan Type & Amount</th>
+                <th className="py-3 px-4 font-bold">Application Date</th>
+                <th className="py-3 px-4 font-bold">Pending Since</th>
+                <th className="py-3 px-4 font-bold">Current Status</th>
+                <th className="py-3 px-4 font-bold">WhatsApp</th>
+                <th className="py-3 px-4 text-right font-bold">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1D3047]/60">
+            <tbody className="divide-y divide-[#D6E4F5]/70">
               {isLoading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={10} className="py-3.5 px-4 h-11 bg-surface-elevated" />
+                    <td colSpan={11} className="py-3.5 px-4 h-11 bg-slate-50" />
                   </tr>
                 ))
               ) : customers.length > 0 ? (
                 customers.map((c) => {
                   const hasLoan = Boolean(c.latestLoan?.id);
-                  const isLoanApproved = c.latestLoan?.status === 'APPROVED' || c.loanStatus === 'APPROVED';
-                  const hasPayment = Boolean(c.latestPayment || c.paymentStatus === 'PAID' || c.paymentStatus === 'VERIFIED');
+                  const isLoanApproved = c.latestLoan?.status === 'APPROVED';
+                  const hasPayment = Boolean(c.latestPayment);
+                  const isDeactivated = c.accountStatus === 'DEACTIVATED' || c.status === 'DEACTIVATED' || c.isActive === false;
+                  const isSelected = selectedCustomerIds.includes(c.id);
 
                   return (
-                    <tr key={c.id} className="hover:bg-surface-elevated hover:brightness-110/50 transition-colors">
-                      {/* Customer Name & Email */}
+                    <tr
+                      key={c.id}
+                      className={`transition-colors duration-150 ${
+                        isSelected
+                          ? 'bg-[#EFF6FF]'
+                          : isDeactivated
+                          ? 'bg-rose-50/40 opacity-80 hover:bg-rose-50/70'
+                          : 'hover:bg-[#F7FAFF]'
+                      }`}
+                    >
+                      {/* Selection Checkbox */}
+                      <td className="py-3 px-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isDeactivated}
+                          onChange={() => handleToggleCustomerRow(c)}
+                          title={isDeactivated ? 'Deactivated accounts cannot be selected' : `Select ${c.fullName}`}
+                          className={`w-4 h-4 rounded border-[#CBDDE9] text-[#2563EB] focus:ring-[#2563EB] ${
+                            isDeactivated ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'
+                          }`}
+                        />
+                      </td>
+
+                      {/* Customer Name */}
                       <td className="py-3 px-4">
-                        <Link
-                          to={`/admin/customers/${c.id}`}
-                          className="font-semibold text-text-primary hover:text-primary transition-colors block"
-                        >
-                          {c.fullName}
-                        </Link>
-                        <span className="text-[11px] text-text-secondary block truncate max-w-[160px]">
-                          {c.email}
-                        </span>
+                        <div className="flex flex-col">
+                          <Link
+                            to={`/admin/customers/${c.id}`}
+                            className="font-bold text-[#0F172A] hover:text-[#2563EB] hover:underline"
+                          >
+                            {c.fullName}
+                          </Link>
+                          <span className="text-[11px] text-[#64748B] font-medium">{c.email}</span>
+                        </div>
                       </td>
 
                       {/* Mobile */}
-                      <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                      <td className="py-3 px-4 font-mono font-semibold text-[#0F172A] whitespace-nowrap">
                         +91 {c.mobile}
                       </td>
 
@@ -806,17 +1134,17 @@ export const AdminCustomersPage: React.FC = () => {
                         {c.latestLoan?.applicationNumber ? (
                           <Link
                             to={`/admin/loans/${c.latestLoan.id}`}
-                            className="font-mono font-medium text-emerald-700 hover:underline"
+                            className="font-mono font-bold text-[#2563EB] hover:underline"
                           >
                             {c.latestLoan.applicationNumber}
                           </Link>
                         ) : (
-                          <span className="text-text-secondary font-mono text-[11px]">N/A</span>
+                          <span className="text-[#64748B] font-mono text-[11px]">N/A</span>
                         )}
                       </td>
 
                       {/* Location (State & City) */}
-                      <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
+                      <td className="py-3 px-4 text-[#334155] font-medium whitespace-nowrap">
                         {c.city ? `${c.city}, ` : ''}{c.state || 'N/A'}
                       </td>
 
@@ -824,25 +1152,25 @@ export const AdminCustomersPage: React.FC = () => {
                       <td className="py-3 px-4">
                         {c.latestLoan ? (
                           <div>
-                            <span className="text-slate-900 font-bold block">
+                            <span className="text-[#0F172A] font-bold block">
                               ₹{c.latestLoan.requestedAmount.toLocaleString('en-IN')}
                             </span>
-                            <span className="text-[11px] text-text-secondary">
+                            <span className="text-[11px] text-[#64748B] font-medium">
                               {c.latestLoan.loanType}
                             </span>
                           </div>
                         ) : (
                           <div>
-                            <span className="text-slate-900 font-medium block">
+                            <span className="text-[#0F172A] font-semibold block">
                               ₹{c.monthlyIncome.toLocaleString('en-IN')}
                             </span>
-                            <span className="text-[11px] text-text-secondary">Reported Income</span>
+                            <span className="text-[11px] text-[#64748B] font-medium">Reported Income</span>
                           </div>
                         )}
                       </td>
 
                       {/* Application Date */}
-                      <td className="py-3 px-4 whitespace-nowrap text-slate-600">
+                      <td className="py-3 px-4 whitespace-nowrap text-[#334155] font-medium">
                         {c.latestLoan?.submittedAt ? (
                           new Date(c.latestLoan.submittedAt).toLocaleDateString('en-IN', {
                             day: '2-digit',
@@ -850,7 +1178,7 @@ export const AdminCustomersPage: React.FC = () => {
                             year: 'numeric',
                           })
                         ) : (
-                          <span className="text-text-secondary text-[11px]">
+                          <span className="text-[#64748B] text-[11px]">
                             {new Date(c.createdAt).toLocaleDateString('en-IN', {
                               day: '2-digit',
                               month: 'short',
@@ -863,20 +1191,20 @@ export const AdminCustomersPage: React.FC = () => {
                       {/* Pending Since */}
                       <td className="py-3 px-4 whitespace-nowrap">
                         {c.pendingSince ? (
-                          <span className="font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[11px]">
+                          <span className="font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded text-[11px] border border-amber-200">
                             {new Date(c.pendingSince).toLocaleDateString('en-IN', {
                               day: '2-digit',
                               month: 'short',
                             })}
                           </span>
                         ) : (
-                          <span className="text-text-secondary text-[11px]">—</span>
+                          <span className="text-[#64748B] text-[11px] font-medium">—</span>
                         )}
                       </td>
 
                       {/* Current Status */}
                       <td className="py-3 px-4 whitespace-nowrap">
-                        {getStatusBadge(c.latestLoan?.status || c.kycStatus || c.accountStatus)}
+                        {getStatusBadge(c)}
                       </td>
 
                       {/* WhatsApp Status Indicator */}
@@ -884,21 +1212,21 @@ export const AdminCustomersPage: React.FC = () => {
                         {getWhatsAppBadge(c)}
                       </td>
 
-                      {/* Requirement 11: Contextual Actions Menu */}
+                      {/* Contextual Actions Menu */}
                       <td className="py-3 px-4 text-right whitespace-nowrap relative">
                         <div className="flex items-center justify-end space-x-1">
                           <Link to={`/admin/customers/${c.id}`}>
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 text-xs px-2 text-slate-700 hover:text-emerald-700"
+                              className="h-7 text-xs px-2 text-[#0F172A] hover:text-[#2563EB] font-semibold"
                             >
                               <ExternalLink className="w-3 h-3 mr-1" />
                               360 View
                             </Button>
                           </Link>
 
-                          {/* More Options Dropdown Trigger */}
+                          {/* 3-Dot More Options Dropdown */}
                           <div className="relative inline-block text-left">
                             <Button
                               variant="outline"
@@ -906,58 +1234,60 @@ export const AdminCustomersPage: React.FC = () => {
                               onClick={() =>
                                 setOpenActionMenuId(openActionMenuId === c.id ? null : c.id)
                               }
-                              className="h-7 w-7 p-0 border-slate-200"
+                              className="h-7 w-7 p-0 border-[#D6E4F5]"
                               title="More Customer Actions"
                             >
-                              <MoreVertical className="w-3.5 h-3.5 text-slate-600" />
+                              <MoreVertical className="w-3.5 h-3.5 text-[#64748B]" />
                             </Button>
 
-                            {/* Dropdown Menu Popup */}
+                            {/* Dropdown Popup */}
                             {openActionMenuId === c.id && (
                               <div
                                 ref={actionMenuRef}
-                                className="absolute right-0 mt-1 w-52 bg-white rounded-lg shadow-lg border border-slate-200 z-30 py-1 text-left animate-in fade-in zoom-in-95"
+                                className="absolute right-0 mt-1 w-56 bg-white rounded-xl shadow-xl border border-[#D6E4F5] z-30 py-1.5 text-left animate-in fade-in zoom-in-95"
                               >
-                                <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] uppercase font-bold text-text-secondary">
+                                <div className="px-3 py-1 border-b border-slate-100 text-[10px] uppercase font-bold text-[#64748B]">
                                   Actions: {c.fullName}
                                 </div>
 
                                 <Link
                                   to={`/admin/customers/${c.id}`}
-                                  className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                  className="w-full text-left px-3 py-1.5 text-xs text-[#0F172A] hover:bg-[#EFF6FF] flex items-center gap-2 font-medium"
                                   onClick={() => setOpenActionMenuId(null)}
                                 >
-                                  <ExternalLink className="w-3.5 h-3.5 text-text-secondary" />
+                                  <ExternalLink className="w-3.5 h-3.5 text-[#2563EB]" />
                                   View Customer (360°)
                                 </Link>
 
                                 {hasLoan && (
                                   <Link
                                     to={`/admin/loans/${c.latestLoan!.id}`}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                    className="w-full text-left px-3 py-1.5 text-xs text-[#0F172A] hover:bg-[#EFF6FF] flex items-center gap-2 font-medium"
                                     onClick={() => setOpenActionMenuId(null)}
                                   >
-                                    <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                                    <FileText className="w-3.5 h-3.5 text-blue-600" />
                                     View Loan Application
                                   </Link>
                                 )}
 
-                                <button
-                                  type="button"
-                                  onClick={() => openWhatsAppModal(c)}
-                                  className="w-full text-left px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 font-medium"
-                                >
-                                  <Send className="w-3.5 h-3.5 text-emerald-600" />
-                                  Send WhatsApp Message
-                                </button>
+                                {!isDeactivated && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openWhatsAppModal(c)}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 font-semibold"
+                                  >
+                                    <Send className="w-3.5 h-3.5 text-emerald-600" />
+                                    Send WhatsApp
+                                  </button>
+                                )}
 
                                 <button
                                   type="button"
                                   onClick={() => openWhatsAppHistory(c)}
-                                  className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                  className="w-full text-left px-3 py-1.5 text-xs text-[#334155] hover:bg-slate-50 flex items-center gap-2 font-medium"
                                 >
-                                  <History className="w-3.5 h-3.5 text-text-secondary" />
-                                  View WhatsApp History
+                                  <History className="w-3.5 h-3.5 text-[#64748B]" />
+                                  WhatsApp History
                                 </button>
 
                                 {isLoanApproved && (
@@ -965,10 +1295,10 @@ export const AdminCustomersPage: React.FC = () => {
                                     type="button"
                                     disabled={downloadingDocId === c.id}
                                     onClick={() => handleDownloadApprovalLetter(c)}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                    className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium"
                                   >
                                     <FileSignature className="w-3.5 h-3.5 text-blue-600" />
-                                    {downloadingDocId === c.id ? 'Generating...' : 'Download Sanction Letter'}
+                                    {downloadingDocId === c.id ? 'Generating...' : 'Sanction Letter'}
                                   </button>
                                 )}
 
@@ -977,10 +1307,39 @@ export const AdminCustomersPage: React.FC = () => {
                                     type="button"
                                     disabled={downloadingDocId === c.id}
                                     onClick={() => handleDownloadInvoice(c)}
-                                    className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                    className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium"
                                   >
                                     <Download className="w-3.5 h-3.5 text-purple-600" />
-                                    {downloadingDocId === c.id ? 'Generating...' : 'Download Tax Invoice'}
+                                    {downloadingDocId === c.id ? 'Generating...' : 'Tax Invoice'}
+                                  </button>
+                                )}
+
+                                <div className="border-t border-slate-100 my-1" />
+
+                                {/* Deactivate / Reactivate Account Option */}
+                                {isDeactivated ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCustomerToReactivate(c);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 font-semibold"
+                                  >
+                                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                    Reactivate Account
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCustomerToDeactivate(c);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 flex items-center gap-2 font-semibold"
+                                  >
+                                    <Ban className="w-3.5 h-3.5 text-red-600" />
+                                    Deactivate Account
                                   </button>
                                 )}
                               </div>
@@ -993,8 +1352,8 @@ export const AdminCustomersPage: React.FC = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={10} className="py-10 text-center text-text-secondary">
-                    <Filter className="w-8 h-8 mx-auto mb-2 text-text-secondary" />
+                  <td colSpan={11} className="py-10 text-center text-[#64748B] font-medium">
+                    <Filter className="w-8 h-8 mx-auto mb-2 text-[#64748B]" />
                     No borrower records found matching your filters.
                   </td>
                 </tr>
@@ -1003,9 +1362,9 @@ export const AdminCustomersPage: React.FC = () => {
           </table>
         </CardContent>
 
-        {/* Pagination Footer (Resets to page 1 on filter changes) */}
+        {/* Pagination Footer */}
         {pagination.totalPages > 1 && (
-          <div className="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-text-secondary">
+          <div className="p-3 border-t border-[#D6E4F5] flex items-center justify-between text-xs text-[#64748B] font-semibold">
             <span>
               Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} borrowers)
             </span>
@@ -1015,7 +1374,7 @@ export const AdminCustomersPage: React.FC = () => {
                 size="sm"
                 disabled={page <= 1}
                 onClick={() => setPage(page - 1)}
-                className="h-7 px-2.5"
+                className="h-7 px-2.5 font-semibold"
               >
                 <ChevronLeft className="w-3.5 h-3.5 mr-1" /> Previous
               </Button>
@@ -1024,7 +1383,7 @@ export const AdminCustomersPage: React.FC = () => {
                 size="sm"
                 disabled={page >= pagination.totalPages}
                 onClick={() => setPage(page + 1)}
-                className="h-7 px-2.5"
+                className="h-7 px-2.5 font-semibold"
               >
                 Next <ChevronRight className="w-3.5 h-3.5 ml-1" />
               </Button>
@@ -1033,7 +1392,506 @@ export const AdminCustomersPage: React.FC = () => {
         )}
       </Card>
 
-      {/* Requirement 5: WhatsApp Preview & Confirmation Modal */}
+      {/* ── STICKY BULK SELECTION ACTION BAR ── */}
+      {selectedCustomerIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 bg-[#0F172A] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 border border-[#334155] animate-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold">
+              {selectedCustomerIds.length}
+            </span>
+            <span className="text-xs font-bold text-slate-200">
+              {selectedCustomerIds.length === 1 ? '1 Customer Selected' : `${selectedCustomerIds.length} Customers Selected`}
+            </span>
+          </div>
+
+          <div className="h-4 w-px bg-slate-700" />
+
+          <Button
+            size="sm"
+            onClick={() => setIsBulkWhatsAppOpen(true)}
+            className="h-8 px-3.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-xs"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            Send WhatsApp
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => setIsBulkEmailOpen(true)}
+            className="h-8 px-3.5 text-xs bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold flex items-center gap-1.5 shadow-xs"
+          >
+            <Mail className="w-3.5 h-3.5" />
+            Send Email
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelectedCustomerIds([])}
+            className="h-8 px-2 text-xs text-slate-400 hover:text-white font-semibold"
+          >
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
+      {/* ── INLINE BULK WHATSAPP COMPOSER MODAL ── */}
+      <Dialog open={isBulkWhatsAppOpen} onOpenChange={setIsBulkWhatsAppOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#0F172A]">
+              <MessageSquare className="w-5 h-5 text-emerald-600" />
+              Compose Bulk WhatsApp Message
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#64748B]">
+              Dispatch custom personalized WhatsApp messages to selected customers via configured WA Bridge Server-to-Server Gateway.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1 text-xs">
+            {/* Selected Recipients Chips */}
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#0F172A]">
+                  Selected Recipients ({selectedCustomerIds.length})
+                </span>
+                <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  Active & Verified Mobile
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pt-1">
+                {selectedCustomerNames.map((name, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white border border-slate-200 text-[#0F172A] shadow-2xs"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Variable Insertion Chips */}
+            <div>
+              <label className="font-bold text-[#0F172A] block mb-1.5">
+                Available Dynamic Variables (Click to Insert):
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {['{{customerName}}', '{{applicationId}}', '{{loanAmount}}', '{{loanStatus}}', '{{companyName}}'].map(
+                  (tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setBulkWhatsAppMessage((prev) => `${prev} ${tag}`)}
+                      className="px-2.5 py-1 text-[11px] font-mono font-bold bg-[#EFF6FF] text-[#2563EB] border border-[#D6E4F5] rounded-lg hover:bg-[#2563EB] hover:text-white transition-colors"
+                    >
+                      {tag}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Message Body Input */}
+            <div>
+              <label className="font-bold text-[#0F172A] block mb-1">
+                Message Content:
+              </label>
+              <textarea
+                rows={6}
+                value={bulkWhatsAppMessage}
+                onChange={(e) => setBulkWhatsAppMessage(e.target.value)}
+                placeholder="Type personalized message body here..."
+                className="w-full p-3 rounded-xl border border-[#CBDDE9] bg-white text-xs text-[#0F172A] font-medium focus:ring-2 focus:ring-[#2563EB] focus:border-transparent leading-relaxed"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsBulkWhatsAppOpen(false)}
+              disabled={isSendingBulkWhatsApp}
+              className="font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSendBulkWhatsApp}
+              disabled={isSendingBulkWhatsApp || !bulkWhatsAppMessage.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+            >
+              {isSendingBulkWhatsApp ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  Dispatching to {selectedCustomerIds.length} Customers...
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5 mr-1.5" />
+                  Send WhatsApp ({selectedCustomerIds.length})
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── INLINE BULK EMAIL COMPOSER MODAL ── */}
+      <Dialog open={isBulkEmailOpen} onOpenChange={setIsBulkEmailOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#0F172A]">
+              <Mail className="w-5 h-5 text-[#2563EB]" />
+              Compose Bulk Email Message
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#64748B]">
+              Dispatch custom emails to selected customers via the active SMTP configuration.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1 text-xs">
+            {/* Selected Recipients Chips */}
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#0F172A]">
+                  Selected Recipients ({selectedCustomerIds.length})
+                </span>
+                <span className="text-[11px] text-[#2563EB] font-semibold bg-[#EFF6FF] px-2 py-0.5 rounded border border-[#D6E4F5]">
+                  Active Customer Accounts
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pt-1">
+                {selectedCustomerNames.map((name, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white border border-slate-200 text-[#0F172A] shadow-2xs"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Email Subject */}
+            <div>
+              <label className="font-bold text-[#0F172A] block mb-1">
+                Email Subject:
+              </label>
+              <Input
+                value={bulkEmailSubject}
+                onChange={(e) => setBulkEmailSubject(e.target.value)}
+                placeholder="Enter email subject line..."
+                className="text-xs font-semibold h-9"
+              />
+            </div>
+
+            {/* Variable Helper Tags */}
+            <div>
+              <label className="font-bold text-[#0F172A] block mb-1.5">
+                Available Dynamic Variables (Click to Insert):
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {['{{customerName}}', '{{applicationId}}', '{{loanAmount}}', '{{loanStatus}}', '{{companyName}}'].map(
+                  (tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setBulkEmailMessage((prev) => `${prev} ${tag}`)}
+                      className="px-2.5 py-1 text-[11px] font-mono font-bold bg-[#EFF6FF] text-[#2563EB] border border-[#D6E4F5] rounded-lg hover:bg-[#2563EB] hover:text-white transition-colors"
+                    >
+                      {tag}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Message Body */}
+            <div>
+              <label className="font-bold text-[#0F172A] block mb-1">
+                Message Body:
+              </label>
+              <textarea
+                rows={6}
+                value={bulkEmailMessage}
+                onChange={(e) => setBulkEmailMessage(e.target.value)}
+                placeholder="Type personalized email message body..."
+                className="w-full p-3 rounded-xl border border-[#CBDDE9] bg-white text-xs text-[#0F172A] font-medium focus:ring-2 focus:ring-[#2563EB] focus:border-transparent leading-relaxed"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsBulkEmailOpen(false)}
+              disabled={isSendingBulkEmail}
+              className="font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSendBulkEmail}
+              disabled={isSendingBulkEmail || !bulkEmailSubject.trim() || !bulkEmailMessage.trim()}
+              className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold"
+            >
+              {isSendingBulkEmail ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  Dispatching Emails...
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5 mr-1.5" />
+                  Send Email ({selectedCustomerIds.length})
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── CAMPAIGN RESULTS SUMMARY MODAL ── */}
+      <Dialog
+        open={Boolean(campaignResult)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCampaignResult(null);
+            setSelectedCustomerIds([]);
+            setSelectedCustomersMap({});
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#0F172A]">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              {campaignResult?.type} Dispatch Summary
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#64748B]">
+              Per-recipient delivery report from the authoritative communication provider.
+            </DialogDescription>
+          </DialogHeader>
+
+          {campaignResult && (
+            <div className="space-y-4 py-1 text-xs">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                  <span className="text-[11px] text-[#64748B] font-bold block uppercase">Total</span>
+                  <span className="text-lg font-bold text-[#0F172A]">{campaignResult.total}</span>
+                </div>
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                  <span className="text-[11px] text-emerald-800 font-bold block uppercase">Sent</span>
+                  <span className="text-lg font-bold text-emerald-700">{campaignResult.sentCount}</span>
+                </div>
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-center">
+                  <span className="text-[11px] text-red-800 font-bold block uppercase">Failed</span>
+                  <span className="text-lg font-bold text-red-700">{campaignResult.failedCount}</span>
+                </div>
+              </div>
+
+              {/* Per-recipient breakdown list */}
+              <div className="max-h-60 overflow-y-auto space-y-2">
+                {campaignResult.results.map((r, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between"
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-bold text-[#0F172A]">
+                        {r.customerName || r.recipient || r.customerId}
+                      </span>
+                      {r.phone && <span className="text-[11px] font-mono text-[#64748B]">{r.phone}</span>}
+                      {r.error && <span className="text-[11px] text-red-600 font-medium">{r.error}</span>}
+                    </div>
+                    <div>
+                      {r.status === 'SENT' || r.success ? (
+                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-[10px]">
+                          SENT
+                        </Badge>
+                      ) : (
+                        <Badge variant="destructive" className="bg-red-50 text-red-700 border-red-200 font-bold text-[10px]">
+                          FAILED
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              size="sm"
+              onClick={() => {
+                setCampaignResult(null);
+                setSelectedCustomerIds([]);
+                setSelectedCustomersMap({});
+              }}
+              className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold"
+            >
+              Close Summary
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── DEACTIVATE ACCOUNT CONFIRMATION MODAL ── */}
+      <Dialog
+        open={Boolean(customerToDeactivate)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCustomerToDeactivate(null);
+            setDeactivateReason('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md border-red-200">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700 font-bold">
+              <Ban className="w-5 h-5 text-red-600" />
+              Deactivate Customer Account?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#475569]">
+              This is a soft-deactivation. The customer will be blocked from logging in. All historical loan, KYC, payment, and audit records will remain preserved.
+            </DialogDescription>
+          </DialogHeader>
+
+          {customerToDeactivate && (
+            <div className="space-y-3 py-1 text-xs">
+              <div className="p-3.5 rounded-xl bg-red-50/60 border border-red-200 space-y-1.5 text-slate-800 font-medium">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Customer Name:</span>
+                  <span className="font-bold text-slate-900">{customerToDeactivate.fullName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Customer ID:</span>
+                  <span className="font-mono text-slate-800">{customerToDeactivate.id.slice(0, 8)}...</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Registered Mobile:</span>
+                  <span className="font-mono font-bold text-slate-900">+91 {customerToDeactivate.mobile}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Email Address:</span>
+                  <span className="text-slate-900 font-semibold">{customerToDeactivate.email}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-800 block mb-1">
+                  Reason for Deactivation (Optional):
+                </label>
+                <Input
+                  value={deactivateReason}
+                  onChange={(e) => setDeactivateReason(e.target.value)}
+                  placeholder="e.g. Administrative request, compliance flag, suspicious activity"
+                  className="text-xs font-medium"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setCustomerToDeactivate(null);
+                setDeactivateReason('');
+              }}
+              disabled={isDeactivating}
+              className="font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleDeactivateCustomer}
+              disabled={isDeactivating}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold"
+            >
+              {isDeactivating ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  Deactivating...
+                </>
+              ) : (
+                'Deactivate Account'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── REACTIVATE ACCOUNT CONFIRMATION MODAL ── */}
+      <Dialog
+        open={Boolean(customerToReactivate)}
+        onOpenChange={(open) => {
+          if (!open) setCustomerToReactivate(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md border-emerald-200">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-800 font-bold">
+              <UserCheck className="w-5 h-5 text-emerald-600" />
+              Reactivate Customer Account?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#475569]">
+              This will restore login access for this customer. All existing records remain intact.
+            </DialogDescription>
+          </DialogHeader>
+
+          {customerToReactivate && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1.5 text-xs text-slate-800 font-medium">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Customer:</span>
+                <span className="font-bold text-slate-900">{customerToReactivate.fullName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Mobile:</span>
+                <span className="font-mono font-bold text-slate-900">+91 {customerToReactivate.mobile}</span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCustomerToReactivate(null)}
+              disabled={isReactivating}
+              className="font-semibold"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleReactivateCustomer}
+              disabled={isReactivating}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+            >
+              {isReactivating ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  Reactivating...
+                </>
+              ) : (
+                'Reactivate Account'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Single Customer WhatsApp Modal */}
       <Dialog
         open={Boolean(selectedCustomerForWhatsApp)}
         onOpenChange={(open) => {
@@ -1042,60 +1900,47 @@ export const AdminCustomersPage: React.FC = () => {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
+            <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold">
               <MessageSquare className="w-5 h-5 text-emerald-600" />
               Send WhatsApp Update
             </DialogTitle>
-            <DialogDescription className="text-xs text-text-secondary">
+            <DialogDescription className="text-xs text-[#64748B]">
               Send verified application status notification directly to the borrower's registered WhatsApp number.
             </DialogDescription>
           </DialogHeader>
 
           {selectedCustomerForWhatsApp && (
             <div className="space-y-4 text-xs py-1">
-              {/* Recipient Details Card */}
-              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 font-medium">
                 <div className="flex justify-between">
-                  <span className="text-text-secondary font-medium">Borrower:</span>
-                  <span className="font-bold text-slate-900">{selectedCustomerForWhatsApp.fullName}</span>
+                  <span className="text-[#64748B]">Borrower:</span>
+                  <span className="font-bold text-[#0F172A]">{selectedCustomerForWhatsApp.fullName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary font-medium">WhatsApp Mobile:</span>
+                  <span className="text-[#64748B]">WhatsApp Mobile:</span>
                   <span className="font-mono font-bold text-emerald-700">
                     +91 {selectedCustomerForWhatsApp.mobile}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary font-medium">Application Ref:</span>
-                  <span className="font-mono text-slate-800">
+                  <span className="text-[#64748B]">Application Ref:</span>
+                  <span className="font-mono text-[#0F172A] font-semibold">
                     {selectedCustomerForWhatsApp.latestLoan?.applicationNumber || 'In Progress'}
                   </span>
                 </div>
-                {selectedCustomerForWhatsApp.pendingSince && (
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary font-medium">Pending Review Since:</span>
-                    <span className="text-amber-800 font-medium">
-                      {new Date(selectedCustomerForWhatsApp.pendingSince).toLocaleDateString('en-IN')}
-                    </span>
-                  </div>
-                )}
               </div>
 
-              {/* Message Composer / Preview */}
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  Message Content (Dynamic Template Preview):
+                <label className="font-bold text-[#0F172A] block mb-1">
+                  Message Content:
                 </label>
                 <textarea
                   rows={5}
                   value={whatsAppMessageText}
                   onChange={(e) => setWhatsAppMessageText(e.target.value)}
-                  className="w-full p-2.5 rounded-lg border border-slate-300 text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:border-success font-sans leading-relaxed"
+                  className="w-full p-2.5 rounded-xl border border-[#CBDDE9] text-xs text-[#0F172A] font-medium focus:ring-1 focus:ring-emerald-500 font-sans leading-relaxed"
                   placeholder="Type message content..."
                 />
-                <p className="text-[11px] text-text-secondary mt-1">
-                  Variables supported: <code>{'{{customerName}}'}</code>, <code>{'{{loanId}}'}</code>, <code>{'{{companyName}}'}</code>.
-                </p>
               </div>
             </div>
           )}
@@ -1106,7 +1951,7 @@ export const AdminCustomersPage: React.FC = () => {
               size="sm"
               onClick={() => setSelectedCustomerForWhatsApp(null)}
               disabled={isSendingWhatsApp}
-              className="text-xs"
+              className="text-xs font-semibold"
             >
               Cancel
             </Button>
@@ -1114,7 +1959,7 @@ export const AdminCustomersPage: React.FC = () => {
               size="sm"
               onClick={handleSendWhatsApp}
               disabled={isSendingWhatsApp}
-              className="text-xs bg-success text-background hover:brightness-110 text-text-primary font-semibold"
+              className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
             >
               {isSendingWhatsApp ? (
                 <>
@@ -1132,7 +1977,7 @@ export const AdminCustomersPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Requirement 6: WhatsApp Message History Modal */}
+      {/* WhatsApp Message History Modal */}
       <Dialog
         open={Boolean(selectedCustomerForHistory)}
         onOpenChange={(open) => {
@@ -1141,11 +1986,11 @@ export const AdminCustomersPage: React.FC = () => {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
+            <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold">
               <History className="w-5 h-5 text-emerald-600" />
               WhatsApp Communication History
             </DialogTitle>
-            <DialogDescription className="text-xs text-text-secondary">
+            <DialogDescription className="text-xs text-[#64748B]">
               Audit log of WhatsApp notifications dispatched to{' '}
               <strong className="text-slate-800">{selectedCustomerForHistory?.fullName}</strong> (
               +91 {selectedCustomerForHistory?.mobile}).
@@ -1154,7 +1999,7 @@ export const AdminCustomersPage: React.FC = () => {
 
           <div className="max-h-80 overflow-y-auto space-y-3 py-1 text-xs">
             {isLoadingHistory ? (
-              <div className="p-6 text-center text-text-secondary">
+              <div className="p-6 text-center text-[#64748B]">
                 <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-emerald-600" />
                 Loading dispatch logs...
               </div>
@@ -1162,43 +2007,43 @@ export const AdminCustomersPage: React.FC = () => {
               historyRecords.map((item) => (
                 <div
                   key={item.id}
-                  className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-2"
+                  className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-2 font-medium"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       {item.status === 'SENT' ? (
-                        <Badge className="bg-success text-background text-text-primary text-[10px]">SENT</Badge>
+                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold text-[10px]">SENT</Badge>
                       ) : item.status === 'DELIVERED' ? (
-                        <Badge className="bg-primary text-background text-text-primary text-[10px]">DELIVERED</Badge>
+                        <Badge className="bg-blue-50 text-blue-700 border-blue-200 font-bold text-[10px]">DELIVERED</Badge>
                       ) : (
-                        <Badge className="bg-red-600 text-text-primary text-[10px]">FAILED</Badge>
+                        <Badge variant="destructive" className="bg-red-50 text-red-700 border-red-200 font-bold text-[10px]">FAILED</Badge>
                       )}
-                      <span className="text-text-secondary text-[11px]">•</span>
-                      <span className="text-text-secondary text-[11px] font-mono">
+                      <span className="text-[#64748B] text-[11px]">•</span>
+                      <span className="text-[#64748B] text-[11px] font-mono">
                         {new Date(item.sentAt || item.createdAt).toLocaleString('en-IN')}
                       </span>
                     </div>
                     {item.admin && (
-                      <span className="text-[11px] text-slate-600">
-                        By: <strong>{item.admin.fullName}</strong>
+                      <span className="text-[11px] text-[#64748B]">
+                        By: <strong className="text-[#0F172A]">{item.admin.fullName}</strong>
                       </span>
                     )}
                   </div>
 
-                  <p className="text-slate-800 bg-white p-2.5 rounded border border-slate-100 whitespace-pre-wrap font-sans text-xs">
+                  <p className="text-[#0F172A] bg-white p-2.5 rounded-lg border border-slate-100 whitespace-pre-wrap font-sans text-xs">
                     {item.message}
                   </p>
 
                   {item.failureReason && (
-                    <div className="text-[11px] text-red-600 bg-red-50 p-1.5 rounded border border-red-200">
+                    <div className="text-[11px] text-red-600 bg-red-50 p-1.5 rounded-lg border border-red-200">
                       Reason: {item.failureReason}
                     </div>
                   )}
                 </div>
               ))
             ) : (
-              <div className="p-6 text-center text-text-secondary">
-                <MessageSquare className="w-8 h-8 mx-auto mb-2 text-text-secondary" />
+              <div className="p-6 text-center text-[#64748B]">
+                <MessageSquare className="w-8 h-8 mx-auto mb-2 text-[#64748B]" />
                 No WhatsApp messages have been sent to this borrower yet.
               </div>
             )}
@@ -1209,24 +2054,10 @@ export const AdminCustomersPage: React.FC = () => {
               variant="outline"
               size="sm"
               onClick={() => setSelectedCustomerForHistory(null)}
-              className="text-xs"
+              className="text-xs font-semibold"
             >
               Close
             </Button>
-            {selectedCustomerForHistory && (
-              <Button
-                size="sm"
-                onClick={() => {
-                  const target = selectedCustomerForHistory;
-                  setSelectedCustomerForHistory(null);
-                  openWhatsAppModal(target);
-                }}
-                className="text-xs bg-success text-background hover:brightness-110 text-text-primary"
-              >
-                <Send className="w-3.5 h-3.5 mr-1" />
-                Send New Message
-              </Button>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

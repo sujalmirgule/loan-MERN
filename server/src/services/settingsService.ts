@@ -264,16 +264,23 @@ export class SettingsService {
       });
     }
 
+    const hasPassword = Boolean(settings.smtpPasswordEnc && settings.smtpPasswordEnc.length > 0);
+
     return {
       id: settings.id,
       smtpHost: settings.smtpHost,
       smtpPort: settings.smtpPort,
       smtpUsername: settings.smtpUsername,
-      hasPassword: Boolean(settings.smtpPasswordEnc && settings.smtpPasswordEnc.length > 0),
-      maskedPassword: settings.smtpPasswordEnc ? '••••••••••••' : '',
+      hasPassword,
+      maskedPassword: hasPassword ? '••••••••••••' : '',
       fromName: settings.fromName,
       fromEmail: settings.fromEmail,
+      replyToEmail: settings.replyToEmail || '',
       encryption: settings.encryption,
+      enabled: settings.enabled,
+      status: settings.status || (settings.smtpHost ? 'CONFIGURED' : 'NOT_CONFIGURED'),
+      lastTestedAt: settings.lastTestedAt,
+      lastError: settings.lastError,
       updatedAt: settings.updatedAt,
     };
   }
@@ -299,7 +306,10 @@ export class SettingsService {
         smtpPasswordEnc,
         fromName: input.fromName,
         fromEmail: input.fromEmail,
+        replyToEmail: input.replyToEmail || '',
         encryption: input.encryption,
+        enabled: input.enabled ?? true,
+        status: input.smtpHost ? 'CONFIGURED' : 'NOT_CONFIGURED',
       },
       create: {
         id: 'default',
@@ -309,7 +319,10 @@ export class SettingsService {
         smtpPasswordEnc,
         fromName: input.fromName,
         fromEmail: input.fromEmail,
+        replyToEmail: input.replyToEmail || '',
         encryption: input.encryption,
+        enabled: input.enabled ?? true,
+        status: input.smtpHost ? 'CONFIGURED' : 'NOT_CONFIGURED',
       },
     });
 
@@ -337,46 +350,88 @@ export class SettingsService {
       maskedPassword: updated.smtpPasswordEnc ? '••••••••••••' : '',
       fromName: updated.fromName,
       fromEmail: updated.fromEmail,
+      replyToEmail: updated.replyToEmail,
       encryption: updated.encryption,
+      enabled: updated.enabled,
+      status: updated.status,
+      lastTestedAt: updated.lastTestedAt,
+      lastError: updated.lastError,
       updatedAt: updated.updatedAt,
     };
   }
 
   /**
-   * Admin: Send test email.
-   * Real provider verification: NO FAKE SUCCESS.
+   * Admin: Test SMTP Connection without sending a message
    */
-  async sendTestEmail(toEmail: string, actor: AuthenticatedUser, ipAddress?: string) {
+  async testEmailConnection(actor: AuthenticatedUser, ipAddress?: string) {
     const { emailService } = await import('./emailService');
-    const settings = await prisma.emailSettings.findUnique({ where: { id: 'default' } });
+    const result = await emailService.testSmtpConnection();
 
-    // Attempt real SMTP connection verification with active provider
-    const connResult = await emailService.testSmtpConnection();
-    if (!connResult.success) {
-      return {
-        success: false,
-        message: `SMTP connection failed: ${connResult.error || connResult.message}`,
-        error: connResult.error,
-        delivered: false,
-      };
-    }
+    const newStatus = result.success ? 'CONNECTED' : 'CONNECTION_FAILED';
+    await prisma.emailSettings.update({
+      where: { id: 'default' },
+      data: {
+        status: newStatus,
+        lastTestedAt: new Date(),
+        lastError: result.error || null,
+      },
+    }).catch(() => null);
 
     await auditService.record({
       actorType: 'ADMIN',
       actorId: actor.id,
       actorName: actor.fullName,
-      action: 'TEST_EMAIL_VERIFIED',
+      action: 'EMAIL_CONNECTION_TESTED',
       entity: 'EmailSettings',
       entityId: 'default',
-      newValue: { toEmail, status: 'VERIFIED', previewUrl: connResult.previewUrl },
+      newValue: { success: result.success, message: result.message },
       ipAddress,
     });
 
+    return result;
+  }
+
+  /**
+   * Admin: Send test email.
+   */
+  async sendTestEmail(input: { toEmail: string; subject?: string; message?: string }, actor: AuthenticatedUser, ipAddress?: string) {
+    const { emailService } = await import('./emailService');
+    const settings = await prisma.emailSettings.findUnique({ where: { id: 'default' } });
+
+    const subject = input.subject || 'Test Email from Loan Approve Desk';
+    const message = input.message || 'This is an official test email from your Loan Approve platform verifying SMTP configuration.';
+
+    const sendResult = await emailService.sendCustomEmail({
+      to: input.toEmail,
+      subject,
+      text: message,
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'TEST_EMAIL_SENT',
+      entity: 'EmailSettings',
+      entityId: 'default',
+      newValue: { toEmail: input.toEmail, status: sendResult.status, error: sendResult.error },
+      ipAddress,
+    });
+
+    if (sendResult.status === 'SENT') {
+      return {
+        success: true,
+        message: `Test email dispatched successfully to ${input.toEmail}`,
+        previewUrl: (sendResult as any).previewUrl,
+        delivered: true,
+      };
+    }
+
     return {
-      success: true,
-      message: connResult.message || `SMTP connection successfully verified (${settings?.smtpHost || 'Ethereal Test SMTP'}).`,
-      previewUrl: connResult.previewUrl,
-      delivered: true,
+      success: false,
+      message: `Failed to send test email: ${sendResult.error || 'SMTP delivery failure'}`,
+      error: sendResult.error,
+      delivered: false,
     };
   }
 
@@ -391,19 +446,27 @@ export class SettingsService {
       });
     }
 
-    const envToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
+    const envToken = process.env.WABRIDGE_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN || '';
     const hasToken = Boolean((settings.accessTokenEnc && settings.accessTokenEnc.length > 0) || envToken);
 
     return {
       id: settings.id,
-      provider: settings.provider || process.env.WHATSAPP_PROVIDER || 'META',
+      provider: settings.provider || process.env.WHATSAPP_PROVIDER || 'WABRIDGE',
       phoneNumber: settings.phoneNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919046833151',
-      phoneNumberId: settings.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '',
-      businessAccountId: settings.businessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
+      phoneNumberId: settings.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '1032424393284050',
+      businessAccountId: settings.businessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '69b16310667cead707b893e1',
       apiEndpoint: settings.apiEndpoint || process.env.WHATSAPP_API_URL || '',
+      apiBaseUrl: settings.apiBaseUrl || process.env.WABRIDGE_API_URL || '',
+      sendEndpoint: settings.sendEndpoint || '',
+      authType: settings.authType || 'BEARER',
+      apiKeyHeaderName: settings.apiKeyHeaderName || 'x-api-key',
+      authHeaderPrefix: settings.authHeaderPrefix || 'Bearer',
       hasAccessToken: hasToken,
       maskedAccessToken: hasToken ? '••••••••••••' : '',
       enabled: settings.enabled || Boolean(envToken),
+      status: settings.status || (hasToken ? 'CONFIGURED' : 'NOT_CONFIGURED'),
+      lastTestedAt: settings.lastTestedAt,
+      lastError: settings.lastError,
       updatedAt: settings.updatedAt,
     };
   }
@@ -423,22 +486,34 @@ export class SettingsService {
       where: { id: 'default' },
       update: {
         provider: input.provider,
-        phoneNumber: input.phoneNumber,
+        phoneNumber: input.phoneNumber || '',
         phoneNumberId: input.phoneNumberId || '',
         businessAccountId: input.businessAccountId || '',
         apiEndpoint: input.apiEndpoint || '',
+        apiBaseUrl: input.apiBaseUrl || '',
+        sendEndpoint: input.sendEndpoint || '',
+        authType: input.authType || 'BEARER',
+        apiKeyHeaderName: input.apiKeyHeaderName || 'x-api-key',
+        authHeaderPrefix: input.authHeaderPrefix || 'Bearer',
         accessTokenEnc,
         enabled: input.enabled,
+        status: (accessTokenEnc || input.apiBaseUrl) ? 'CONFIGURED' : 'NOT_CONFIGURED',
       },
       create: {
         id: 'default',
         provider: input.provider,
-        phoneNumber: input.phoneNumber,
+        phoneNumber: input.phoneNumber || '',
         phoneNumberId: input.phoneNumberId || '',
         businessAccountId: input.businessAccountId || '',
         apiEndpoint: input.apiEndpoint || '',
+        apiBaseUrl: input.apiBaseUrl || '',
+        sendEndpoint: input.sendEndpoint || '',
+        authType: input.authType || 'BEARER',
+        apiKeyHeaderName: input.apiKeyHeaderName || 'x-api-key',
+        authHeaderPrefix: input.authHeaderPrefix || 'Bearer',
         accessTokenEnc,
         enabled: input.enabled,
+        status: (accessTokenEnc || input.apiBaseUrl) ? 'CONFIGURED' : 'NOT_CONFIGURED',
       },
     });
 
@@ -457,7 +532,7 @@ export class SettingsService {
       ipAddress,
     });
 
-    const envToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
+    const envToken = process.env.WABRIDGE_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN || '';
     const hasToken = Boolean((updated.accessTokenEnc && updated.accessTokenEnc.length > 0) || envToken);
 
     return {
@@ -467,48 +542,60 @@ export class SettingsService {
       phoneNumberId: updated.phoneNumberId,
       businessAccountId: updated.businessAccountId,
       apiEndpoint: updated.apiEndpoint,
+      apiBaseUrl: updated.apiBaseUrl,
+      sendEndpoint: updated.sendEndpoint,
+      authType: updated.authType,
+      apiKeyHeaderName: updated.apiKeyHeaderName,
+      authHeaderPrefix: updated.authHeaderPrefix,
       hasAccessToken: hasToken,
       maskedAccessToken: hasToken ? '••••••••••••' : '',
       enabled: updated.enabled,
+      status: updated.status,
+      lastTestedAt: updated.lastTestedAt,
+      lastError: updated.lastError,
       updatedAt: updated.updatedAt,
     };
   }
 
   /**
-   * Admin: Send test WhatsApp message.
-   * Real provider verification: NO FAKE SUCCESS.
+   * Admin: Test WhatsApp Connection without sending a message
    */
-  async sendTestWhatsApp(toNumber: string, actor: AuthenticatedUser, ipAddress?: string) {
+  async testWhatsAppConnection(actor: AuthenticatedUser, ipAddress?: string) {
     const { whatsappService } = await import('./whatsappService');
-    const settings = await prisma.whatsAppSettings.findUnique({ where: { id: 'default' } });
+    const result = await whatsappService.testConnection();
 
-    const connResult = await whatsappService.testConnection();
-    if (!connResult.success) {
-      return {
-        success: false,
-        message: `WhatsApp provider connection failed: ${connResult.error || connResult.message}`,
-        error: connResult.error,
-        delivered: false,
-      };
-    }
+    const newStatus = result.success ? 'CONNECTED' : (result as any).status || 'CONNECTION_FAILED';
+    await prisma.whatsAppSettings.update({
+      where: { id: 'default' },
+      data: {
+        status: newStatus,
+        lastTestedAt: new Date(),
+        lastError: result.error || null,
+      },
+    }).catch(() => null);
 
     await auditService.record({
       actorType: 'ADMIN',
       actorId: actor.id,
       actorName: actor.fullName,
-      action: 'TEST_WHATSAPP_VERIFIED',
+      action: 'WHATSAPP_CONNECTION_TESTED',
       entity: 'WhatsAppSettings',
       entityId: 'default',
-      newValue: { toNumber, provider: settings?.provider || process.env.WHATSAPP_PROVIDER || 'DEVELOPMENT' },
+      newValue: { success: result.success, message: result.message },
       ipAddress,
     });
 
-    return {
-      success: true,
-      message: connResult.message || `WhatsApp provider connection verified successfully for ${settings?.provider || process.env.WHATSAPP_PROVIDER || 'DEVELOPMENT'}.`,
-      delivered: true,
-    };
+    return result;
   }
+
+  /**
+   * Admin: Send test WhatsApp message.
+   */
+  async sendTestWhatsApp(input: { toNumber: string; message?: string; templateName?: string }, actor: AuthenticatedUser, ipAddress?: string) {
+    const { whatsappService } = await import('./whatsappService');
+    return whatsappService.sendTestPing({ toNumber: input.toNumber, message: input.message, templateName: input.templateName, actor, ipAddress });
+  }
+
 
   /**
    * Admin: Get Automated Communication Configuration

@@ -227,12 +227,28 @@ export class CommunicationController {
    */
   async sendCustomerEmail(req: Request, res: Response, next: NextFunction) {
     try {
-      const { customerIds, filter, subject, message, templateName, ticketId, forceMock } = req.body;
+      const { customerIds, applicationIds, filter, subject, message, templateName, ticketId, forceMock } = req.body;
       const actor = req.user || { id: 'admin-system', fullName: 'System Admin' };
       const ipAddress = req.ip || req.socket.remoteAddress;
 
+      if (applicationIds && Array.isArray(applicationIds) && applicationIds.length > 0) {
+        const result = await emailService.sendBulkApplicationEmails({
+          applicationIds,
+          subject: subject?.trim(),
+          message: message?.trim(),
+          templateName: templateName?.trim(),
+          actor: actor as any,
+          ipAddress,
+        });
+        return res.json({
+          success: result.sentCount > 0 || (result.total > 0 && result.failedCount === 0),
+          message: `Email campaign completed: ${result.sentCount} sent, ${result.failedCount} failed.`,
+          data: result,
+        });
+      }
+
       if ((!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) && !filter) {
-        throw new AppError(400, 'Either customer IDs or a valid filter definition must be provided.');
+        throw new AppError(400, 'Either customer IDs, application IDs, or a valid filter definition must be provided.');
       }
 
       if (!subject || typeof subject !== 'string' || !subject.trim()) {
@@ -263,6 +279,35 @@ export class CommunicationController {
           result.failedCount === 0
             ? `Successfully dispatched email to ${result.sentCount} customer(s).`
             : `Email dispatch completed: ${result.sentCount} sent, ${result.failedCount} failed.`,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/admin/communication/email/bulk-applications
+   */
+  async sendBulkApplicationEmail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { applicationIds, subject, message, templateName } = req.body;
+      if (!applicationIds || !Array.isArray(applicationIds) || applicationIds.length === 0) {
+        throw new AppError(400, 'Please select at least one loan application.');
+      }
+      const actor = req.user || { id: 'admin-system', fullName: 'System Admin' };
+      const result = await emailService.sendBulkApplicationEmails({
+        applicationIds,
+        subject: subject?.trim(),
+        message: message?.trim(),
+        templateName: templateName?.trim(),
+        actor: actor as any,
+        ipAddress: req.ip,
+      });
+
+      res.json({
+        success: result.sentCount > 0 || (result.total > 0 && result.failedCount === 0),
+        message: `Email campaign completed: ${result.sentCount} sent, ${result.failedCount} failed.`,
         data: result,
       });
     } catch (err) {
@@ -340,19 +385,35 @@ export class CommunicationController {
 
   /**
    * POST /api/admin/communication/whatsapp/bulk
-   * Sends bulk WhatsApp messages to filtered or selected customers.
+   * Sends bulk WhatsApp messages to filtered customers or loan applications.
    */
   async sendBulkWhatsApp(req: Request, res: Response, next: NextFunction) {
     try {
-      const { customerIds, filter, message, templateName } = req.body;
+      const { customerIds, applicationIds, filter, message, templateName } = req.body;
+      const actor = req.user || { id: 'admin-system', fullName: 'System Admin' };
+
+      if (applicationIds && Array.isArray(applicationIds) && applicationIds.length > 0) {
+        const result = await whatsappService.sendBulkApplicationMessages({
+          applicationIds,
+          message: typeof message === 'string' ? message.trim() : undefined,
+          templateName,
+          actor: actor as any,
+          ipAddress: req.ip,
+        });
+        return res.json({
+          success: result.sentCount > 0 || (result.total > 0 && result.failedCount === 0),
+          message: `WhatsApp campaign completed: ${result.sentCount} sent, ${result.failedCount} failed.`,
+          data: result,
+        });
+      }
+
       if ((!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) && !filter) {
-        throw new AppError(400, 'Either customer IDs or a filter must be provided.');
+        throw new AppError(400, 'Either customer IDs, application IDs, or a filter must be provided.');
       }
       if (!message || typeof message !== 'string' || !message.trim()) {
         throw new AppError(400, 'Message body is required.');
       }
 
-      const actor = req.user || { id: 'admin-system', fullName: 'System Admin' };
       const result = await whatsappService.sendBulkMessages({
         customerIds,
         filter,
@@ -371,6 +432,36 @@ export class CommunicationController {
       next(err);
     }
   }
+
+  /**
+   * POST /api/admin/communication/whatsapp/bulk-applications
+   * Sends bulk WhatsApp messages to selected loan applications.
+   */
+  async sendBulkApplicationWhatsApp(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { applicationIds, message, templateName } = req.body;
+      if (!applicationIds || !Array.isArray(applicationIds) || applicationIds.length === 0) {
+        throw new AppError(400, 'Please select at least one loan application.');
+      }
+      const actor = req.user || { id: 'admin-system', fullName: 'System Admin' };
+      const result = await whatsappService.sendBulkApplicationMessages({
+        applicationIds,
+        message: typeof message === 'string' ? message.trim() : undefined,
+        templateName,
+        actor: actor as any,
+        ipAddress: req.ip,
+      });
+
+      res.json({
+        success: result.sentCount > 0 || (result.total > 0 && result.failedCount === 0),
+        message: `WhatsApp campaign completed: ${result.sentCount} sent, ${result.failedCount} failed.`,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
 
   /**
    * GET /api/admin/communication/history

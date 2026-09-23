@@ -96,22 +96,31 @@ export const updateEmailSettingsSchema = z.object({
   smtpPassword: z.string().optional(), // if provided, will be re-encrypted
   fromName: z.string().trim().min(1, 'From Name is required'),
   fromEmail: z.string().trim().email('Valid from-email is required'),
+  replyToEmail: z.string().trim().email('Valid reply-to email').or(z.literal('')).optional(),
   encryption: z.enum(['NONE', 'SSL', 'STARTTLS']).default('STARTTLS'),
+  enabled: z.boolean().default(true),
 });
 
 export type UpdateEmailSettingsInput = z.infer<typeof updateEmailSettingsSchema>;
 
 export const testEmailSchema = z.object({
   toEmail: z.string().trim().email('Valid recipient email is required'),
+  subject: z.string().trim().optional(),
+  message: z.string().trim().optional(),
 });
 
 // --- WhatsApp Settings Schema ---
 export const updateWhatsAppSettingsSchema = z.object({
-  provider: z.enum(['META', 'TWILIO', 'GUPSHUP']).default('META'),
-  phoneNumber: z.string().trim().min(5, 'Phone number is required'),
+  provider: z.string().trim().default('WABRIDGE'),
+  phoneNumber: z.string().trim().optional().default(''),
   phoneNumberId: z.string().trim().optional(),
   businessAccountId: z.string().trim().optional(),
-  apiEndpoint: z.string().trim().url('Valid API endpoint URL is required').or(z.literal('')).optional(),
+  apiEndpoint: z.string().trim().or(z.literal('')).optional(),
+  apiBaseUrl: z.string().trim().or(z.literal('')).optional(),
+  sendEndpoint: z.string().trim().or(z.literal('')).optional(),
+  authType: z.enum(['BEARER', 'API_KEY', 'CUSTOM_HEADER', 'NONE']).default('BEARER').optional(),
+  apiKeyHeaderName: z.string().trim().default('x-api-key').optional(),
+  authHeaderPrefix: z.string().trim().default('Bearer').optional(),
   accessToken: z.string().optional(), // if provided, re-encrypted
   enabled: z.boolean().default(false),
 });
@@ -119,7 +128,18 @@ export const updateWhatsAppSettingsSchema = z.object({
 export type UpdateWhatsAppSettingsInput = z.infer<typeof updateWhatsAppSettingsSchema>;
 
 export const testWhatsAppSchema = z.object({
-  toNumber: z.string().trim().min(10, 'Valid destination phone number is required'),
+  toNumber: z.string().trim().min(5, 'Valid destination phone number is required'),
+  message: z.string().trim().optional(),
+  templateName: z.string().trim().optional(),
+});
+
+export const bulkCommunicationSchema = z.object({
+  customerIds: z.array(z.string()).optional(),
+  applicationIds: z.array(z.string()).optional(),
+  message: z.string().trim().optional(),
+  subject: z.string().trim().optional(),
+  templateName: z.string().trim().optional(),
+  source: z.string().trim().optional(),
 });
 
 // --- Payment Config Schema ---

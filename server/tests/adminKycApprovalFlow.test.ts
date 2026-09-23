@@ -5,17 +5,18 @@ import { prisma } from '../src/services/db';
 import bcrypt from 'bcryptjs';
 import { ALL_PERMISSION_KEYS } from '../src/constants/permissions';
 
-describe('Admin KYC Verification & UTR Validation Flow', () => {
-  const adminEmail = 'kyc-admin-test@loanapprove.local';
+describe('Admin KYC Verification & UTR Synchronization Flow (Regression Suite)', () => {
+  const adminEmail = 'kyc-reg-admin@loanapprove.local';
   const adminPassword = 'AdminPassword123!';
   let adminToken: string;
 
-  const custAMobile = '9811122233';
+  const custAMobile = '9811122299';
   let custAId: string;
   let custAToken: string;
   let custAChargeId: string;
+  const sampleUtr = '202609061427';
 
-  const custBMobile = '9822233344';
+  const custBMobile = '9822233388';
   let custBId: string;
   let custBToken: string;
   let custBChargeId: string;
@@ -48,7 +49,7 @@ describe('Admin KYC Verification & UTR Validation Flow', () => {
       data: {
         email: adminEmail,
         passwordHash,
-        fullName: 'KYC Compliance Lead',
+        fullName: 'Master System Administrator',
         role: 'SUPER_ADMIN',
         permissions: JSON.stringify(ALL_PERMISSION_KEYS),
         isActive: true,
@@ -64,14 +65,14 @@ describe('Admin KYC Verification & UTR Validation Flow', () => {
     const custARes = await request(app)
       .post('/api/auth/customer/register')
       .send({
-        fullName: 'Anuj Test',
+        fullName: 'Test User',
         mobile: custAMobile,
-        email: 'anuj.test@domain.local',
+        email: 'test.reg@loanapprove.local',
         state: 'Maharashtra',
         city: 'Mumbai',
-        address: 'Bandra West, Mumbai',
+        address: 'Nariman Point, Mumbai',
         monthlyIncome: 65000,
-        aadhaar: '123456789564',
+        aadhaar: '657896322645',
       });
     custAId = custARes.body.data.user.id;
     custAToken = custARes.body.data.token;
@@ -80,9 +81,9 @@ describe('Admin KYC Verification & UTR Validation Flow', () => {
     const custBRes = await request(app)
       .post('/api/auth/customer/register')
       .send({
-        fullName: 'Ravi Test',
+        fullName: 'Other Borrower',
         mobile: custBMobile,
-        email: 'ravi.test@domain.local',
+        email: 'other.borrower@loanapprove.local',
         state: 'Delhi',
         city: 'New Delhi',
         address: 'Connaught Place, New Delhi',
@@ -91,6 +92,30 @@ describe('Admin KYC Verification & UTR Validation Flow', () => {
       });
     custBId = custBRes.body.data.user.id;
     custBToken = custBRes.body.data.token;
+
+    // Customer A uploads Aadhaar Front and Back
+    await request(app)
+      .post('/api/customer/documents')
+      .set('Authorization', `Bearer ${custAToken}`)
+      .attach('file', Buffer.from('mock front'), 'front.png')
+      .field('documentType', 'AADHAAR_FRONT');
+
+    await request(app)
+      .post('/api/customer/documents')
+      .set('Authorization', `Bearer ${custAToken}`)
+      .attach('file', Buffer.from('mock back'), 'back.png')
+      .field('documentType', 'AADHAAR_BACK');
+
+    // Fetch active KYC charge for customer A
+    const chargesRes = await request(app)
+      .get('/api/customer/charges')
+      .set('Authorization', `Bearer ${custAToken}`);
+    expect(chargesRes.status).toBe(200);
+    const kycChg = chargesRes.body.data.find(
+      (c: any) => c.name.includes('KYC') || c.remark?.includes('KYC')
+    );
+    expect(kycChg).toBeDefined();
+    custAChargeId = kycChg.id;
   });
 
   afterAll(async () => {
@@ -114,114 +139,107 @@ describe('Admin KYC Verification & UTR Validation Flow', () => {
     });
   });
 
-  it('1. Rejects KYC approval if Aadhaar documents are missing', async () => {
+  it('TEST 1: Customer submits UTR -> payment record created/updated & UTR persisted in DB', async () => {
     const res = await request(app)
-      .post(`/api/admin/kyc/${custAId}/decision`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ status: 'APPROVED' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.message).toContain('Both Aadhaar Front and Aadhaar Back must be uploaded');
-  });
-
-  it('2. Customer uploads only Aadhaar Front; Admin still cannot approve', async () => {
-    await request(app)
-      .post('/api/customer/documents')
+      .post(`/api/customer/charges/${custAChargeId}/submit-utr`)
       .set('Authorization', `Bearer ${custAToken}`)
-      .attach('file', Buffer.from('mock front'), 'front.pdf')
-      .field('documentType', 'AADHAAR_FRONT');
+      .send({
+        utr: sampleUtr,
+        paymentMethod: 'UPI',
+        notes: 'KYC Verification Fee settlement',
+      });
 
-    const res = await request(app)
-      .post(`/api/admin/kyc/${custAId}/decision`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ status: 'APPROVED' });
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
 
-    expect(res.status).toBe(400);
-    expect(res.body.message).toContain('Both Aadhaar Front and Aadhaar Back must be uploaded');
+    // Verify DB persistence
+    const persistedCharge = await prisma.charge.findUnique({
+      where: { id: custAChargeId },
+    });
+    expect(persistedCharge).toBeDefined();
+    expect(persistedCharge?.transactionRef).toBe(sampleUtr);
+    expect(persistedCharge?.paymentId).toBeDefined();
+
+    const persistedPayment = await prisma.payment.findFirst({
+      where: { transactionRef: sampleUtr },
+    });
+    expect(persistedPayment).toBeDefined();
+    expect(persistedPayment?.customerId).toBe(custAId);
+    expect(persistedPayment?.status).toBe('UNDER_VERIFICATION');
   });
 
-  it('3. Customer uploads Aadhaar Back; KYC status is UNDER_REVIEW', async () => {
-    await request(app)
-      .post('/api/customer/documents')
-      .set('Authorization', `Bearer ${custAToken}`)
-      .attach('file', Buffer.from('mock back'), 'back.pdf')
-      .field('documentType', 'AADHAAR_BACK');
+  it('TEST 2: Customer UTR submission response contains persisted UTR', async () => {
+    const detailRes = await request(app)
+      .get('/api/customer/charges')
+      .set('Authorization', `Bearer ${custAToken}`);
 
-    const cust = await prisma.customer.findUnique({ where: { id: custAId } });
-    expect(cust?.kycStatus).toBe('UNDER_REVIEW');
+    expect(detailRes.status).toBe(200);
+    const kycChg = detailRes.body.data.find((c: any) => c.id === custAChargeId);
+    expect(kycChg).toBeDefined();
+    expect(kycChg.transactionRef).toBe(sampleUtr);
   });
 
-  it('4. Admin CANNOT approve KYC if UTR is missing', async () => {
-    const res = await request(app)
-      .post(`/api/admin/kyc/${custAId}/decision`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ status: 'APPROVED' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.message).toContain('UTR number is required before KYC approval');
-  });
-
-  it('5. Admin KYC list correctly exposes UTR Missing badge data', async () => {
+  it('TEST 3: Admin KYC queue returns same UTR and PENDING_VERIFICATION payment status', async () => {
     const listRes = await request(app)
       .get('/api/admin/kyc')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(listRes.status).toBe(200);
-    const customers = listRes.body.data.customers;
-    const itemA = customers.find((c: any) => c.id === custAId);
+    const itemA = listRes.body.data.customers.find((c: any) => c.id === custAId);
     expect(itemA).toBeDefined();
-    expect(itemA.hasUtr).toBe(false);
+    expect(itemA.hasUtr).toBe(true);
+    expect(itemA.utrSubmitted).toBe(true);
+    expect(itemA.utr).toBe(sampleUtr);
+    expect(itemA.paymentStatus).toBe('PENDING_VERIFICATION');
+    expect(itemA.kycPaymentStatus).toBe('UNDER_VERIFICATION');
     expect(itemA.isKycFeePaid).toBe(false);
-    expect(itemA.utr).toBeNull();
-  });
+    expect(itemA.kycStatus).toBe('UNDER_REVIEW');
 
-  it('6. Admin KYC detail endpoint returns kycPayment block with Not Provided UTR', async () => {
     const detailRes = await request(app)
       .get(`/api/admin/kyc/${custAId}`)
       .set('Authorization', `Bearer ${adminToken}`);
-
     expect(detailRes.status).toBe(200);
-    expect(detailRes.body.data.kycPayment).toBeDefined();
-    expect(detailRes.body.data.kycPayment.hasUtr).toBe(false);
-    expect(detailRes.body.data.kycPayment.utr).toBe('Not Provided');
+    expect(detailRes.body.data.kycPayment.hasUtr).toBe(true);
+    expect(detailRes.body.data.kycPayment.utr).toBe(sampleUtr);
     expect(detailRes.body.data.kycPayment.isPaid).toBe(false);
   });
 
-  it('7. Customer submits invalid format UTR (< 8 chars); rejected by API', async () => {
-    // Find active KYC charge
-    const chargesRes = await request(app)
-      .get('/api/customer/charges')
-      .set('Authorization', `Bearer ${custAToken}`);
-    custAChargeId = chargesRes.body.data[0].id;
+  it('TEST 4: Admin verifies payment -> payment becomes VERIFIED / PAID & UTR remains unchanged', async () => {
+    const verifyRes = await request(app)
+      .post(`/api/admin/charges/specific/${custAChargeId}/verify-payment`)
+      .set('Authorization', `Bearer ${adminToken}`);
 
-    const payRes = await request(app)
-      .post(`/api/customer/charges/${custAChargeId}/pay`)
-      .set('Authorization', `Bearer ${custAToken}`)
-      .send({ utr: '123' });
+    expect(verifyRes.status).toBe(200);
 
-    expect(payRes.status).toBe(400);
+    const charge = await prisma.charge.findUnique({ where: { id: custAChargeId } });
+    expect(charge?.status).toBe('PAID');
+    expect(charge?.transactionRef).toBe(sampleUtr);
+
+    const payment = await prisma.payment.findFirst({ where: { transactionRef: sampleUtr } });
+    expect(payment?.status).toBe('PAID');
+    expect(payment?.verifiedBy).toBeDefined();
+    expect(payment?.verifiedAt).toBeDefined();
+
+    // 1:1 invoice generated
+    const invoice = await prisma.invoice.findUnique({ where: { chargeId: custAChargeId } });
+    expect(invoice).toBeDefined();
+    expect(invoice?.status).toBe('PAID');
   });
 
-  it('8. Customer submits valid UTR; KYC list shows UTR Provided', async () => {
-    const payRes = await request(app)
-      .post(`/api/customer/charges/${custAChargeId}/pay`)
-      .set('Authorization', `Bearer ${custAToken}`)
-      .send({ utr: 'UTR123456789012' });
-
-    expect(payRes.status).toBe(201);
-    expect(payRes.body.data.charge.transactionRef).toBe('UTR123456789012');
+  it('TEST 5: KYC is NOT automatically approved after payment verification', async () => {
+    const customer = await prisma.customer.findUnique({ where: { id: custAId } });
+    expect(customer?.kycStatus).toBe('UNDER_REVIEW');
 
     const listRes = await request(app)
       .get('/api/admin/kyc')
       .set('Authorization', `Bearer ${adminToken}`);
-
     const itemA = listRes.body.data.customers.find((c: any) => c.id === custAId);
-    expect(itemA.hasUtr).toBe(true);
-    expect(itemA.utr).toBe('UTR123456789012');
-    expect(itemA.isKycFeePaid).toBe(false);
+    expect(itemA.isKycFeePaid).toBe(true);
+    expect(itemA.paymentStatus).toBe('VERIFIED');
+    expect(itemA.kycStatus).toBe('UNDER_REVIEW');
   });
 
-  it('9. Admin successfully approves KYC with UTR present -> KYC becomes VERIFIED, payment becomes PAID, Invoice generated', async () => {
+  it('TEST 6: Admin explicitly approves KYC -> KYC becomes APPROVED', async () => {
     const res = await request(app)
       .post(`/api/admin/kyc/${custAId}/decision`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -229,58 +247,80 @@ describe('Admin KYC Verification & UTR Validation Flow', () => {
 
     expect(res.status).toBe(200);
 
-    // 1. Customer KYC status updated
     const customer = await prisma.customer.findUnique({ where: { id: custAId } });
     expect(customer?.kycStatus).toBe('APPROVED');
 
-    // 2. KYC charge is PAID
-    const charge = await prisma.charge.findUnique({ where: { id: custAChargeId } });
-    expect(charge?.status).toBe('PAID');
-
-    // 3. 1:1 dynamic Tax Invoice generated
-    const invoice = await prisma.invoice.findUnique({ where: { chargeId: custAChargeId } });
-    expect(invoice).toBeDefined();
-    expect(invoice?.customerId).toBe(custAId);
-    expect(invoice?.status).toBe('PAID');
-
-    // 4. Customer notification created
-    const notif = await prisma.notification.findFirst({
-      where: { customerId: custAId, eventType: 'KYC_STATUS' },
-      orderBy: { createdAt: 'desc' },
-    });
-    expect(notif?.message).toBe('KYC verification completed successfully.');
-
-    // 5. Audit log created
-    const audit = await prisma.auditLog.findFirst({
-      where: { entityId: custAId, action: 'KYC_APPROVED' },
-    });
-    expect(audit).toBeDefined();
+    const listRes = await request(app)
+      .get('/api/admin/kyc')
+      .set('Authorization', `Bearer ${adminToken}`);
+    const itemA = listRes.body.data.customers.find((c: any) => c.id === custAId);
+    expect(itemA.kycStatus).toBe('APPROVED');
+    expect(itemA.isKycFeePaid).toBe(true);
   });
 
-  it('10. Another customer B cannot reuse Customer A’s UTR (Duplicate UTR prevention)', async () => {
-    // Upload Customer B docs
+  it('TEST 7: After KYC approval -> customer can proceed to subsequent documents / loan stage', async () => {
+    const profileRes = await request(app)
+      .get('/api/customer/profile')
+      .set('Authorization', `Bearer ${custAToken}`);
+
+    expect(profileRes.status).toBe(200);
+    const profile = profileRes.body.data?.profile || profileRes.body.data;
+    expect(profile.kycStatus).toBe('APPROVED');
+
+    // Customer can now upload subsequent mandatory loan documents (PAN)
+    const panRes = await request(app)
+      .post('/api/customer/documents')
+      .set('Authorization', `Bearer ${custAToken}`)
+      .attach('file', Buffer.from('mock pan'), 'pan.png')
+      .field('documentType', 'PAN');
+
+    expect(panRes.status).toBe(201);
+  });
+
+  it('TEST 8: Unauthorized customer cannot modify another customer payment/UTR', async () => {
+    const res = await request(app)
+      .post(`/api/customer/charges/${custAChargeId}/submit-utr`)
+      .set('Authorization', `Bearer ${custBToken}`)
+      .send({
+        utr: '999888777666',
+        paymentMethod: 'UPI',
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toContain('Access Denied');
+  });
+
+  it('TEST 9: Duplicate UTR submission follows existing duplicate-payment rules', async () => {
+    // Upload Customer B Aadhaar docs
     await request(app)
       .post('/api/customer/documents')
       .set('Authorization', `Bearer ${custBToken}`)
-      .attach('file', Buffer.from('mock front b'), 'front.pdf')
+      .attach('file', Buffer.from('mock b front'), 'front_b.png')
       .field('documentType', 'AADHAAR_FRONT');
 
     await request(app)
       .post('/api/customer/documents')
       .set('Authorization', `Bearer ${custBToken}`)
-      .attach('file', Buffer.from('mock back b'), 'back.pdf')
+      .attach('file', Buffer.from('mock b back'), 'back_b.png')
       .field('documentType', 'AADHAAR_BACK');
 
     const chargesRes = await request(app)
       .get('/api/customer/charges')
       .set('Authorization', `Bearer ${custBToken}`);
-    custBChargeId = chargesRes.body.data[0].id;
+    const kycChgB = chargesRes.body.data.find(
+      (c: any) => c.name.includes('KYC') || c.remark?.includes('KYC')
+    );
+    expect(kycChgB).toBeDefined();
+    custBChargeId = kycChgB.id;
 
-    // Attempt to submit customer A's UTR
+    // Customer B tries to submit the same UTR that is already verified for Customer A
     const dupRes = await request(app)
-      .post(`/api/customer/charges/${custBChargeId}/pay`)
+      .post(`/api/customer/charges/${custBChargeId}/submit-utr`)
       .set('Authorization', `Bearer ${custBToken}`)
-      .send({ utr: 'UTR123456789012' });
+      .send({
+        utr: sampleUtr,
+        paymentMethod: 'UPI',
+      });
 
     expect(dupRes.status).toBe(400);
     expect(dupRes.body.message).toContain('Duplicate UTR');

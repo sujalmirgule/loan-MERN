@@ -65,6 +65,28 @@ export class LoanApplicationService {
       );
     }
 
+    // Enforce "All Required Loan Documents Uploaded Before Loan Application"
+    const customerDocs = await prisma.loanDocument.findMany({
+      where: {
+        customerId: customer.id,
+        isCurrentVersion: true,
+        documentType: { in: ['PAN', 'BANK_STATEMENT', 'INCOME_PROOF', 'OTHER'] },
+        status: { notIn: ['REJECTED'] },
+      },
+    });
+
+    const uniqueDocTypes = new Set(customerDocs.map((d) => d.documentType));
+    const mandatoryDocTypes = ['PAN', 'BANK_STATEMENT', 'INCOME_PROOF', 'OTHER'];
+    const missingDocs = mandatoryDocTypes.filter((t) => !uniqueDocTypes.has(t));
+
+    if (missingDocs.length > 0 || customerDocs.length < 4) {
+      throw new AppError(
+        400,
+        'All required loan documents (PAN Card, Bank Statement, Income Proof, and Other Documents) must be uploaded before applying.',
+        'DOCUMENTS_INCOMPLETE'
+      );
+    }
+
     // Enforce "One Mobile = One Customer = One Active Loan Application"
     const activeExistingApplication = await prisma.loanApplication.findFirst({
       where: {
@@ -164,11 +186,10 @@ export class LoanApplicationService {
       });
     }
 
-    // Link any unlinked customer loan documents and charges to this newly created application
+    // Link customer loan documents and charges to this newly created/submitted application
     await prisma.loanDocument.updateMany({
       where: {
         customerId: customer.id,
-        loanId: null,
       },
       data: {
         loanId: application.id,
@@ -178,7 +199,6 @@ export class LoanApplicationService {
     await prisma.charge.updateMany({
       where: {
         customerId: customer.id,
-        loanId: null,
       },
       data: {
         loanId: application.id,
@@ -452,16 +472,18 @@ export class LoanApplicationService {
     const where: Prisma.LoanApplicationWhereInput = {};
 
     // Status filter
-    if (filters.status) {
-      if ((filters.status as string) === 'PENDING') {
+    const statusStr = (filters.status as string | undefined)?.trim();
+    if (statusStr && statusStr !== 'ALL' && statusStr !== '') {
+      const s = statusStr.toUpperCase();
+      if (s === 'PENDING') {
         where.status = {
           in: ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD', 'OFFER_PENDING_CUSTOMER'],
         };
-      } else if ((filters.status as string) === 'APPROVED') {
+      } else if (s === 'APPROVED') {
         where.status = {
           in: ['APPROVED', 'OFFER_ACCEPTED', 'DISBURSED', 'ACTIVE'],
         };
-      } else if ((filters.status as string) === 'REJECTED') {
+      } else if (s === 'REJECTED') {
         where.status = {
           in: ['REJECTED', 'OFFER_REJECTED', 'CANCELLED'],
         };
@@ -531,7 +553,14 @@ export class LoanApplicationService {
       }
     }
 
-    const [total, applications] = await Promise.all([
+    // Base where without status filter for dynamic badge counts
+    const baseWhere: Prisma.LoanApplicationWhereInput = {};
+    if (where.customer) baseWhere.customer = where.customer;
+    if (where.loanType) baseWhere.loanType = where.loanType;
+    if (where.OR) baseWhere.OR = where.OR;
+    if (where.createdAt) baseWhere.createdAt = where.createdAt;
+
+    const [total, applications, allCount, pendingCount, approvedCount, rejectedCount] = await Promise.all([
       prisma.loanApplication.count({ where }),
       prisma.loanApplication.findMany({
         where,
@@ -550,6 +579,25 @@ export class LoanApplicationService {
               kycStatus: true,
             },
           },
+        },
+      }),
+      prisma.loanApplication.count({ where: baseWhere }),
+      prisma.loanApplication.count({
+        where: {
+          ...baseWhere,
+          status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'DOCUMENTS_REQUIRED', 'ON_HOLD', 'OFFER_PENDING_CUSTOMER'] },
+        },
+      }),
+      prisma.loanApplication.count({
+        where: {
+          ...baseWhere,
+          status: { in: ['APPROVED', 'OFFER_ACCEPTED', 'DISBURSED', 'ACTIVE'] },
+        },
+      }),
+      prisma.loanApplication.count({
+        where: {
+          ...baseWhere,
+          status: { in: ['REJECTED', 'OFFER_REJECTED', 'CANCELLED'] },
         },
       }),
     ]);
@@ -583,8 +631,15 @@ export class LoanApplicationService {
         total,
         totalPages: Math.ceil(total / pageSize) || 1,
       },
+      counts: {
+        all: allCount,
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+      },
     };
   }
+
 
   /**
    * Retrieves complete loan application details for admin review.

@@ -9,6 +9,15 @@ export interface MetaWhatsAppConfig {
   businessAccountId?: string;
 }
 
+export function sanitizeError(errorText: string): string {
+  if (!errorText) return 'Unknown error';
+  // Strip Bearer tokens and long token-like strings
+  return errorText
+    .replace(/Bearer\s+[A-Za-z0-9_\-\.]+/gi, 'Bearer [REDACTED]')
+    .replace(/EA[A-Za-z0-9_\-\.]{15,}/g, '[REDACTED_TOKEN]')
+    .replace(/access_token=[^&\s]+/gi, 'access_token=[REDACTED]');
+}
+
 export class MetaWhatsAppProvider implements WhatsAppProvider {
   readonly name = 'META_CLOUD_API';
   private config: MetaWhatsAppConfig;
@@ -28,7 +37,11 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
   }
 
   public isConfigured(): boolean {
-    return Boolean(this.config.accessToken && (this.config.phoneNumberId || this.config.apiUrl));
+    return Boolean(
+      this.config.accessToken &&
+      this.config.accessToken.trim().length >= 10 &&
+      (this.config.phoneNumberId || this.config.apiUrl)
+    );
   }
 
   /**
@@ -102,7 +115,8 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
       };
 
       if (!response.ok) {
-        const errMsg = data.error?.message || `WhatsApp Provider HTTP ${response.status}`;
+        const rawErrMsg = data.error?.message || `WhatsApp Provider HTTP ${response.status}`;
+        const errMsg = sanitizeError(rawErrMsg);
         logger.error('WhatsApp message delivery failure', {
           recipient: formattedPhone,
           error: errMsg,
@@ -121,7 +135,8 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
         providerMessageId: data.messages?.[0]?.id || `wa_${Date.now()}`,
       };
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : 'Network failure contacting WhatsApp provider';
+      const rawErrMsg = err instanceof Error ? err.message : 'Network failure contacting WhatsApp provider';
+      const errMsg = sanitizeError(rawErrMsg);
       logger.error('WhatsApp transmission exception', { error: errMsg });
       return {
         recipient: formattedPhone || payload.to,
@@ -140,8 +155,13 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
     return results;
   }
 
-  async testConnection(): Promise<{ success: boolean; message: string; error?: string }> {
-    if (!this.isConfigured()) {
+  async testConnection(customConfig?: MetaWhatsAppConfig): Promise<{ success: boolean; message: string; error?: string }> {
+    const activeConfig = customConfig || this.config;
+    const token = activeConfig.accessToken || this.config.accessToken;
+    const phoneId = activeConfig.phoneNumberId || this.config.phoneNumberId;
+    const apiVersion = activeConfig.apiVersion || this.config.apiVersion || 'v18.0';
+
+    if (!token || !token.trim() || (!phoneId && !activeConfig.apiUrl)) {
       return {
         success: false,
         message: 'WhatsApp provider credentials are not configured.',
@@ -150,23 +170,23 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
     }
 
     try {
-      const apiVersion = this.config.apiVersion || process.env.WHATSAPP_API_VERSION || 'v18.0';
       const testUrl =
-        this.config.apiUrl ||
-        `https://graph.facebook.com/${apiVersion}/${this.config.phoneNumberId}`;
+        activeConfig.apiUrl ||
+        `https://graph.facebook.com/${apiVersion}/${phoneId}`;
       const response = await fetch(testUrl, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${this.config.accessToken}`,
+          Authorization: `Bearer ${token}`,
         },
       });
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        const errMsg = (data as any)?.error?.message || `HTTP ${response.status}`;
+        const rawErrMsg = (data as any)?.error?.message || `HTTP ${response.status}`;
+        const errMsg = sanitizeError(rawErrMsg);
         return {
           success: false,
-          message: 'Failed to verify WhatsApp credentials with Meta API.',
+          message: `WhatsApp configuration validation failed: ${errMsg}`,
           error: errMsg,
         };
       }
@@ -176,11 +196,14 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
         message: 'Successfully verified connection to WhatsApp Cloud API.',
       };
     } catch (err: unknown) {
+      const rawErrMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = sanitizeError(rawErrMsg);
       return {
         success: false,
         message: 'Failed to establish connection to WhatsApp provider.',
-        error: err instanceof Error ? err.message : String(err),
+        error: errMsg,
       };
     }
   }
 }
+

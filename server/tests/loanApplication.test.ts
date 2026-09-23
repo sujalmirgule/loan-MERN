@@ -227,6 +227,24 @@ describe('Phase 4 — Loan Application & Management Suite', () => {
         where: { id: customerIdB },
         data: { kycStatus: 'APPROVED' },
       });
+
+      for (const cid of [customerIdA, customerIdB]) {
+        for (const dt of ['PAN', 'BANK_STATEMENT', 'INCOME_PROOF', 'OTHER']) {
+          await prisma.loanDocument.create({
+            data: {
+              customerId: cid,
+              documentType: dt,
+              fileName: `${dt}.pdf`,
+              filePath: `uploads/${dt}.pdf`,
+              fileUrl: `/uploads/${dt}.pdf`,
+              mimeType: 'application/pdf',
+              fileSize: 1024,
+              status: 'PENDING',
+              isCurrentVersion: true,
+            },
+          });
+        }
+      }
     });
 
     it('should successfully submit a valid loan application for Customer A once KYC is approved', async () => {

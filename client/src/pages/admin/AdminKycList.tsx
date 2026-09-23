@@ -270,6 +270,32 @@ export const AdminKycList: React.FC = () => {
     }
   };
 
+  // Action: Verify KYC Fee Payment (UTR)
+  const handleVerifyPayment = async (chargeId: string, customerName?: string) => {
+    if (!chargeId) return;
+    try {
+      setIsSubmittingAction(true);
+      setActionError(null);
+
+      await apiClient.post(API_ENDPOINTS.CHARGES.SPECIFIC.VERIFY_PAYMENT(chargeId));
+
+      setSuccessMessage(`Payment verified successfully for ${customerName || 'Customer'}. Tax invoice generated.`);
+      fetchKycList(true);
+      if (activeDrawerCustomer) {
+        setActiveDrawerCustomer((prev) =>
+          prev ? { ...prev, isKycFeePaid: true, hasUtr: true } : null
+        );
+      }
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Failed to verify payment reference';
+      setActionError(msg);
+    } finally {
+      setIsSubmittingAction(false);
+    }
+  };
+
   // Action: Reject KYC
   const handleConfirmReject = async () => {
     if (!rejectCustomer) return;
@@ -736,36 +762,44 @@ export const AdminKycList: React.FC = () => {
                           Docs
                         </Button>
 
-                        {/* Verify / Approve KYC Button (Visible & Prominent) */}
+                        {/* Verify Payment / Approve KYC Action */}
                         {canVerify && c.kycStatus !== 'APPROVED' && c.kycStatus !== 'VERIFIED' && (
-                          <Button
-                            size="sm"
-                            disabled={!c.hasUtr && !c.isKycFeePaid}
-                            onClick={() => {
-                              if (!c.hasUtr && !c.isKycFeePaid) {
-                                setActionError(
-                                  'UTR number is required before KYC approval.'
-                                );
-                                return;
-                              }
-                              setVerifyCustomer(c);
-                              setVerifyConfirmed(false);
-                              setActionError(null);
-                            }}
-                            title={
-                              !c.hasUtr && !c.isKycFeePaid
-                                ? 'UTR number is required before KYC approval'
-                                : 'Approve and Verify KYC'
-                            }
-                            className={`h-9 px-3.5 text-xs font-bold rounded-xl shadow-xs transition ${
-                              !c.hasUtr && !c.isKycFeePaid
-                                ? 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                                : 'bg-[#16A34A] hover:bg-[#15803d] text-white shadow-sm'
-                            }`}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                            {c.isKycFeePaid ? 'Verify' : c.hasUtr ? 'Approve KYC' : 'UTR Missing'}
-                          </Button>
+                          c.isKycFeePaid ? (
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setVerifyCustomer(c);
+                                setVerifyConfirmed(false);
+                                setActionError(null);
+                              }}
+                              title="Approve Customer KYC"
+                              className="h-9 px-3.5 text-xs font-bold rounded-xl bg-[#16A34A] hover:bg-[#15803d] text-white shadow-sm transition"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              Approve KYC
+                            </Button>
+                          ) : c.hasUtr && c.kycChargeId ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleVerifyPayment(c.kycChargeId!, c.fullName)}
+                              disabled={isSubmittingAction}
+                              title="Verify Submitted Payment Reference (UTR)"
+                              className="h-9 px-3.5 text-xs font-bold rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-sm transition"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              Verify Payment
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              disabled={true}
+                              title="UTR number is required before KYC approval"
+                              className="h-9 px-3.5 text-xs font-bold rounded-xl bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed opacity-60"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5 mr-1 text-slate-400" />
+                              UTR Missing
+                            </Button>
+                          )
                         )}
 
                         {/* Reject Button (Visible) */}
@@ -884,32 +918,42 @@ export const AdminKycList: React.FC = () => {
                   </Button>
                 )}
                 {canVerify && activeDrawerCustomer.kycStatus !== 'APPROVED' && activeDrawerCustomer.kycStatus !== 'VERIFIED' && (
-                  <Button
-                    size="sm"
-                    disabled={!activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid}
-                    onClick={() => {
-                      if (!activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid) {
-                        setActionError('UTR number is required before KYC approval.');
-                        return;
-                      }
-                      setVerifyCustomer(activeDrawerCustomer);
-                      setVerifyConfirmed(false);
-                      setActionError(null);
-                    }}
-                    title={
-                      !activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid
-                        ? 'UTR number is required before KYC approval.'
-                        : 'Approve KYC'
-                    }
-                    className={`h-8 px-4 text-xs font-bold shadow-sm transition ${
-                      !activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid
-                        ? 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                        : 'bg-[#16A34A] hover:bg-[#15803d] text-white'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                    Approve KYC
-                  </Button>
+                  activeDrawerCustomer.isKycFeePaid ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setVerifyCustomer(activeDrawerCustomer);
+                        setVerifyConfirmed(false);
+                        setActionError(null);
+                      }}
+                      title="Approve KYC"
+                      className="h-8 px-4 text-xs font-bold shadow-sm bg-[#16A34A] hover:bg-[#15803d] text-white"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                      Approve KYC
+                    </Button>
+                  ) : activeDrawerCustomer.hasUtr && activeDrawerCustomer.kycChargeId ? (
+                    <Button
+                      size="sm"
+                      onClick={() => handleVerifyPayment(activeDrawerCustomer.kycChargeId!, activeDrawerCustomer.fullName)}
+                      disabled={isSubmittingAction}
+                      title="Verify Payment Reference (UTR)"
+                      className="h-8 px-4 text-xs font-bold shadow-sm bg-[#2563EB] hover:bg-[#1D4ED8] text-white"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                      Verify Payment
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      disabled={true}
+                      title="UTR number is required before KYC approval."
+                      className="h-8 px-4 text-xs font-bold shadow-sm bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed opacity-60"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 mr-1 text-slate-400" />
+                      UTR Missing
+                    </Button>
+                  )
                 )}
               </div>
             </div>
@@ -1056,6 +1100,20 @@ export const AdminKycList: React.FC = () => {
                           : 'Payment Required'}
                       </span>
                     </div>
+
+                    {activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid && activeDrawerCustomer.kycChargeId && (
+                      <div className="pt-2 border-t border-[#D6E4F5]/60">
+                        <Button
+                          size="sm"
+                          onClick={() => handleVerifyPayment(activeDrawerCustomer.kycChargeId!, activeDrawerCustomer.fullName)}
+                          disabled={isSubmittingAction}
+                          className="w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs h-8.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Verify Payment Reference (UTR)</span>
+                        </Button>
+                      </div>
+                    )}
 
                     {!activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid && (
                       <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2 mt-2">
@@ -1288,32 +1346,42 @@ export const AdminKycList: React.FC = () => {
                   </Button>
                 )}
                 {canVerify && activeDrawerCustomer.kycStatus !== 'APPROVED' && activeDrawerCustomer.kycStatus !== 'VERIFIED' && (
-                  <Button
-                    size="sm"
-                    disabled={!activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid}
-                    onClick={() => {
-                      if (!activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid) {
-                        setActionError('UTR number is required before KYC approval.');
-                        return;
-                      }
-                      setVerifyCustomer(activeDrawerCustomer);
-                      setVerifyConfirmed(false);
-                      setActionError(null);
-                    }}
-                    title={
-                      !activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid
-                        ? 'UTR number is required before KYC approval.'
-                        : 'Approve KYC'
-                    }
-                    className={`h-9 px-5 text-xs font-bold shadow-sm transition ${
-                      !activeDrawerCustomer.hasUtr && !activeDrawerCustomer.isKycFeePaid
-                        ? 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                        : 'bg-[#16A34A] hover:bg-[#15803d] text-white'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                    Approve KYC
-                  </Button>
+                  activeDrawerCustomer.isKycFeePaid ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setVerifyCustomer(activeDrawerCustomer);
+                        setVerifyConfirmed(false);
+                        setActionError(null);
+                      }}
+                      title="Approve KYC"
+                      className="h-9 px-5 text-xs font-bold shadow-sm bg-[#16A34A] hover:bg-[#15803d] text-white"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                      Approve KYC
+                    </Button>
+                  ) : activeDrawerCustomer.hasUtr && activeDrawerCustomer.kycChargeId ? (
+                    <Button
+                      size="sm"
+                      onClick={() => handleVerifyPayment(activeDrawerCustomer.kycChargeId!, activeDrawerCustomer.fullName)}
+                      disabled={isSubmittingAction}
+                      title="Verify Payment Reference (UTR)"
+                      className="h-9 px-5 text-xs font-bold shadow-sm bg-[#2563EB] hover:bg-[#1D4ED8] text-white"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                      Verify Payment
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      disabled={true}
+                      title="UTR number is required before KYC approval."
+                      className="h-9 px-5 text-xs font-bold shadow-sm bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed opacity-60"
+                    >
+                      <AlertTriangle className="w-4 h-4 mr-1.5 text-slate-400" />
+                      UTR Missing
+                    </Button>
+                  )
                 )}
               </div>
             </div>
