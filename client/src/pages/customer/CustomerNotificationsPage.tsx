@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
@@ -27,6 +28,7 @@ interface NotificationItem {
 
 export const CustomerNotificationsPage: React.FC = () => {
   useBrandTitle('Notifications');
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<{ data: NotificationItem[]; unreadCount: number }>({
@@ -115,7 +117,25 @@ export const CustomerNotificationsPage: React.FC = () => {
           {notifications.map((notif) => (
             <Card
               key={notif.id}
-              onClick={() => !notif.isRead && markReadMutation.mutate(notif.id)}
+              onClick={() => {
+                if (!notif.isRead) markReadMutation.mutate(notif.id);
+                const title = (notif.title || '').toLowerCase();
+                const msg = (notif.message || '').toLowerCase();
+                const event = (notif.eventType || '').toUpperCase();
+                if (event.includes('PAYMENT') || title.includes('fee') || title.includes('charge') || title.includes('payment') || msg.includes('utr')) {
+                  navigate('/customer/payments');
+                } else if (event.includes('AGREEMENT') || title.includes('agreement') || msg.includes('agreement')) {
+                  navigate('/customer/loans');
+                } else if (event.includes('KYC') || title.includes('kyc') || msg.includes('aadhaar')) {
+                  navigate('/customer/kyc');
+                } else if (event.includes('DOC') || title.includes('document') || msg.includes('upload') || msg.includes('pan')) {
+                  navigate('/customer/documents');
+                } else if (event.includes('LOAN') || title.includes('loan') || title.includes('sanction') || title.includes('approval') || msg.includes('disburs')) {
+                  navigate('/customer/loans');
+                } else {
+                  navigate('/customer');
+                }
+              }}
               className={`border transition-all cursor-pointer ${
                 notif.isRead ? 'bg-white border-slate-200' : 'bg-emerald-50/40 border-emerald-300 shadow-sm'
               }`}

@@ -73,9 +73,9 @@ export const AdminLoanApprovalPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Primary state tab: 'PENDING' | 'APPROVED' | 'REJECTED'
-  const initialTab = (searchParams.get('tab')?.toUpperCase() as 'PENDING' | 'APPROVED' | 'REJECTED') || 'PENDING';
-  const [activeTab, setActiveTab] = useState<'PENDING' | 'APPROVED' | 'REJECTED'>(initialTab);
+  // Primary state tab: 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
+  const initialTab = (searchParams.get('tab')?.toUpperCase() as 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED') || 'PENDING';
+  const [activeTab, setActiveTab] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>(initialTab);
 
   // Sub-filter for Pending
   const [pendingSubFilter, setPendingSubFilter] = useState<'ALL' | 'SUBMITTED' | 'UNDER_REVIEW' | 'ON_HOLD' | 'DOCUMENTS_REQUIRED'>('ALL');
@@ -156,6 +156,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
 
   // Determine status query param based on activeTab
   const getStatusQuery = () => {
+    if (activeTab === 'ALL') return '';
     if (activeTab === 'APPROVED') return 'APPROVED';
     if (activeTab === 'REJECTED') return 'REJECTED';
     if (pendingSubFilter !== 'ALL') return pendingSubFilter;
@@ -176,10 +177,11 @@ export const AdminLoanApprovalPage: React.FC = () => {
       dateTo,
     ],
     queryFn: async () => {
+      const statusParam = getStatusQuery();
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
-        status: getStatusQuery(),
+        ...(statusParam ? { status: statusParam } : {}),
         ...(search ? { search } : {}),
         ...(stateFilter ? { state: stateFilter } : {}),
         ...(loanTypeFilter ? { loanType: loanTypeFilter } : {}),
@@ -192,32 +194,41 @@ export const AdminLoanApprovalPage: React.FC = () => {
     refetchInterval: 1500,
   });
 
-  // Query counts for the 3 state tabs
+  // Query counts for all 4 state views
+  const { data: allCountData } = useQuery({
+    queryKey: ['adminLoanCounts', 'ALL'],
+    queryFn: async () => {
+      const res = await apiClient.get('/admin/loan-applications?pageSize=1');
+      return res.data?.pagination?.total ?? res.data?.counts?.all ?? 0;
+    },
+    refetchInterval: 2500,
+  });
+
   const { data: pendingCountData } = useQuery({
     queryKey: ['adminLoanCounts', 'PENDING'],
     queryFn: async () => {
       const res = await apiClient.get('/admin/loan-applications?status=PENDING&pageSize=1');
-      return res.data?.pagination?.total || 0;
+      return res.data?.pagination?.total ?? res.data?.counts?.pending ?? 0;
     },
-    refetchInterval: 1500,
+    refetchInterval: 2500,
   });
 
   const { data: approvedCountData } = useQuery({
     queryKey: ['adminLoanCounts', 'APPROVED'],
     queryFn: async () => {
       const res = await apiClient.get('/admin/loan-applications?status=APPROVED&pageSize=1');
-      return res.data?.pagination?.total || 0;
+      return res.data?.pagination?.total ?? res.data?.counts?.approved ?? 0;
     },
-    refetchInterval: 1500,
+    refetchInterval: 2500,
   });
 
   const { data: rejectedCountData } = useQuery({
     queryKey: ['adminLoanCounts', 'REJECTED'],
     queryFn: async () => {
       const res = await apiClient.get('/admin/loan-applications?status=REJECTED&pageSize=1');
-      return res.data?.pagination?.total || 0;
+      return res.data?.pagination?.total ?? res.data?.counts?.rejected ?? 0;
     },
-    refetchInterval: 1500,
+    refetchInterval: 2500,
   });
 
   const rawList = responseData?.data;
@@ -266,7 +277,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
   }, [activeTab, pendingSubFilter, search, stateFilter, loanTypeFilter, dateFrom, dateTo, page]);
 
   // Tab switcher
-  const handleTabChange = (tab: 'PENDING' | 'APPROVED' | 'REJECTED') => {
+  const handleTabChange = (tab: 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED') => {
     setActiveTab(tab);
     setPage(1);
     setSelectedIds([]);
@@ -569,10 +580,34 @@ export const AdminLoanApprovalPage: React.FC = () => {
       )}
 
       {/* ==================================================== */}
-      {/* 3 CLEAR STATE NAVIGATION BUTTONS (APPROVED / PENDING / REJECTED) */}
+      {/* 4 CLEAR STATE NAVIGATION BUTTONS (ALL / PENDING / APPROVED / REJECTED) */}
       {/* ==================================================== */}
-      <div className="grid grid-cols-3 gap-3">
-        {/* Tab 1: PENDING */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Tab 1: ALL */}
+        <button
+          type="button"
+          onClick={() => handleTabChange('ALL')}
+          className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all text-left ${
+            activeTab === 'ALL'
+              ? 'border-primary bg-primary/10 shadow-sm'
+              : 'border-border bg-surface hover:border-primary/50'
+          }`}
+        >
+          <div className="flex items-center space-x-3">
+            <div className={`p-2.5 rounded-lg ${activeTab === 'ALL' ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`}>
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs uppercase font-bold text-text-secondary tracking-wider">All Applications</div>
+              <div className="text-sm sm:text-base font-extrabold text-text-primary">Master Register</div>
+            </div>
+          </div>
+          <Badge className={`${activeTab === 'ALL' ? 'bg-primary text-primary-foreground' : 'bg-surface-elevated text-text-secondary border border-border'} font-mono font-bold text-xs`}>
+            {allCountData ?? '...'}
+          </Badge>
+        </button>
+
+        {/* Tab 2: PENDING */}
         <button
           type="button"
           onClick={() => handleTabChange('PENDING')}
@@ -596,7 +631,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
           </Badge>
         </button>
 
-        {/* Tab 2: APPROVED */}
+        {/* Tab 3: APPROVED */}
         <button
           type="button"
           onClick={() => handleTabChange('APPROVED')}
@@ -620,7 +655,7 @@ export const AdminLoanApprovalPage: React.FC = () => {
           </Badge>
         </button>
 
-        {/* Tab 3: REJECTED */}
+        {/* Tab 4: REJECTED */}
         <button
           type="button"
           onClick={() => handleTabChange('REJECTED')}
@@ -820,12 +855,14 @@ export const AdminLoanApprovalPage: React.FC = () => {
         <CardHeader className="pb-3 border-b border-border flex-row items-center justify-between">
           <div>
             <CardTitle className="text-sm font-bold text-text-primary">
+              {activeTab === 'ALL' && 'All Loan Applications'}
               {activeTab === 'PENDING' && 'Pending Applications Queue'}
               {activeTab === 'APPROVED' && 'Approved & Sanctioned Applications'}
               {activeTab === 'REJECTED' && 'Rejected Applications'}
               <span className="text-text-secondary font-normal ml-1">({pagination.total} total)</span>
             </CardTitle>
             <CardDescription className="text-xs">
+              {activeTab === 'ALL' && 'Comprehensive registry of all customer loan applications across all lifecycle stages.'}
               {activeTab === 'PENDING' && 'Review borrower documentation, configure sanction terms, or decline.'}
               {activeTab === 'APPROVED' && 'Access sanction letters, digital agreements, and KYC packages.'}
               {activeTab === 'REJECTED' && 'View recorded decline justification and customer audit trails.'}

@@ -311,6 +311,24 @@ export const CustomerHome: React.FC = () => {
   );
   const paidCharges = customerCharges.filter((c) => c.status === 'PAID');
 
+  // Comprehensive list of all applicable charges including KYC Verification Fee
+  const allApplicableCharges: CustomerChargeItem[] = [...customerCharges];
+  const hasKycCharge = allApplicableCharges.some((c) => /kyc/i.test(c.name));
+  if (!hasKycCharge) {
+    allApplicableCharges.unshift({
+      id: 'kyc-verification-fee',
+      name: 'KYC Verification Fee',
+      amount: 99,
+      status: isKycApproved ? 'PAID' : (kycSummary.status === 'UNDER_REVIEW' ? 'UNDER_VERIFICATION' : 'PENDING'),
+      remark: 'Government Identity & Aadhaar KYC Verification Fee',
+      dueDate: null,
+      paidAt: isKycApproved ? (customer as any).updatedAt || new Date().toISOString() : null,
+      transactionRef: isKycApproved ? 'KYC-VERIFIED' : null,
+      loanId: loanSummary?.id || null,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
   // Combined Invoices list (prioritize /customer/invoices then dashboard.invoices)
   const invoicesList = (customerInvoices && customerInvoices.length > 0)
     ? customerInvoices
@@ -482,11 +500,8 @@ export const CustomerHome: React.FC = () => {
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto pb-16 text-[#0F172A]">
-      {/* ========================================================================= */}
-      {/* 1. CUSTOMER / LOAN HERO                                                   */}
-      {/* ========================================================================= */}
+      {/* ── TOP GREETING & NOTICES BAR ────────────────────────────────────── */}
       <div className="space-y-4">
-        {/* Top Greeting Bar with Prominent Apply CTA */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-3 border-b border-[#D6E4F5]">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0F2A5F]">
@@ -501,7 +516,6 @@ export const CustomerHome: React.FC = () => {
             <Badge variant="outline" className="text-xs bg-white text-[#0F172A] border-[#D6E4F5] font-semibold">
               Account Active
             </Badge>
-            {/* Prominent Fintech Apply for Loan CTA */}
             {!loanSummary && (
               <Button
                 data-testid="hero-apply-loan-btn"
@@ -515,16 +529,134 @@ export const CustomerHome: React.FC = () => {
           </div>
         </div>
 
-        {/* Hero Customer / Loan Card */}
+        {/* CUSTOMER NOTICES (From Backend Notifications & Important Milestones) */}
+        {data.notifications && data.notifications.length > 0 && (
+          <div className="space-y-2">
+            {data.notifications.slice(0, 2).map((notif) => (
+              <div
+                key={notif.id}
+                onClick={() => navigate('/customer/notifications')}
+                className="p-4 rounded-2xl bg-gradient-to-r from-[#EFF6FF] to-white border border-[#D6E4F5] flex items-center justify-between gap-3 cursor-pointer hover:border-[#2563EB] transition shadow-xs"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-100 text-[#2563EB] flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xs sm:text-sm font-bold text-[#0F2A5F]">{notif.title}</h2>
+                    <p className="text-xs text-[#64748B] line-clamp-1">{notif.message}</p>
+                  </div>
+                </div>
+                <Badge className="bg-[#2563EB] text-white text-[10px] font-bold shrink-0">
+                  IMPORTANT UPDATE
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* QUICK ACTIONS BAR */}
+        <div className="space-y-2 pt-1">
+          <div className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider px-1">
+            QUICK ACTIONS
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {loanSummary ? (
+              <Link
+                to={`/customer/loans/${loanSummary.id}`}
+                className="p-3.5 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
+              >
+                <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                  <IndianRupee className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-bold text-[#0F172A]">View My Loan</span>
+                <span className="text-[10px] text-[#64748B] mt-0.5">Application #{loanSummary.applicationNumber}</span>
+              </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={handleApplyClick}
+              className="p-3.5 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
+            >
+              <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                <IndianRupee className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-bold text-[#0F172A]">Apply for Loan</span>
+              <span className="text-[10px] text-[#64748B] mt-0.5">Fast application</span>
+            </button>
+          )}
+
+          <Link
+            to="/customer/kyc"
+            className="p-3.5 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+              <Upload className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-[#0F172A]">KYC Verification</span>
+            <span className="text-[10px] text-[#64748B] mt-0.5">Identity status</span>
+          </Link>
+
+          <Link
+            to="/customer/documents"
+            className="p-3.5 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+              <FileText className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-[#0F172A]">My Documents</span>
+            <span className="text-[10px] text-[#64748B] mt-0.5">Upload & history</span>
+          </Link>
+
+          <Link
+            to="/customer/loans"
+            className="p-3.5 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+              <Clock className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-[#0F172A]">Loan History</span>
+            <span className="text-[10px] text-[#64748B] mt-0.5">Applications list</span>
+          </Link>
+
+          <Link
+            to={loanSummary ? `/customer/payment/${loanSummary.id}` : '/customer/payments'}
+            className="p-3.5 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+              <CreditCard className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-[#0F172A]">Payments & Fees</span>
+            <span className="text-[10px] text-[#64748B] mt-0.5">Fee settlements</span>
+          </Link>
+
+          <Link
+            to="/customer/support"
+            className="p-3.5 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+              <HelpCircle className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-[#0F172A]">Borrower Support</span>
+            <span className="text-[10px] text-[#64748B] mt-0.5">Helpdesk tickets</span>
+          </Link>
+        </div>
+      </div>
+    </div>
+
+      {/* ========================================================================= */}
+      {/* 1. CURRENT LOAN STATUS & LOAN OFFER                                        */}
+      {/* ========================================================================= */}
+      <div id="section-loan-offer" className="space-y-4">
         <Card className="bg-white border-[#D6E4F5] rounded-3xl shadow-xs overflow-hidden">
           <CardHeader className="p-5 sm:p-6 pb-4 border-b border-[#D6E4F5]/60 bg-[#F7FAFF]">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block mb-0.5">
-                  LOAN ACCOUNT & PORTAL SUMMARY
+                  1. CURRENT LOAN STATUS
                 </span>
                 <CardTitle className="text-xl sm:text-2xl font-black text-[#0F2A5F]">
-                  {loanSummary ? `Application #${loanSummary.applicationNumber}` : `Customer ID #${customer.id.slice(0, 8).toUpperCase()}`}
+                  {loanSummary ? `Application #${loanSummary.applicationNumber}` : `CUSTOMER ACCOUNT #${customer.id.slice(0, 8).toUpperCase()}`}
                 </CardTitle>
               </div>
               {loanSummary ? (
@@ -545,7 +677,6 @@ export const CustomerHome: React.FC = () => {
           </CardHeader>
 
           <CardContent className="p-5 sm:p-6 space-y-4">
-            {/* 5 Financial Metric Cards in Hero */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-4 bg-[#F7FAFF] rounded-2xl border border-[#D6E4F5]">
               <div className="space-y-1">
                 <span className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider block">Loan Type</span>
@@ -581,17 +712,17 @@ export const CustomerHome: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. LOAN OVERVIEW / FINANCING SUMMARY                                      */}
+      {/* 2. LOAN AMOUNT & FINANCIAL SUMMARY                                        */}
       {/* ========================================================================= */}
-      <div className="space-y-4">
+      <div id="section-financial-summary" className="space-y-4">
         <div className="flex items-center justify-between px-1">
           <div>
             <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              LOAN OVERVIEW
+              2. LOAN OVERVIEW
             </span>
             <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
               <IndianRupee className="w-4 h-4 text-[#2563EB]" />
-              <span>Complete Financial Terms & Repayment Overview</span>
+              <span>Financial & Repayment Summary</span>
             </h2>
             <p className="text-xs text-[#64748B]">Structured financial particulars of active loan facility</p>
           </div>
@@ -688,356 +819,692 @@ export const CustomerHome: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. QUICK ACTIONS (PLACED HIGHER NEAR TOP)                                 */}
+      {/* 3. CHARGES & FEES (DEDICATED FINANCIAL SECTION WITH STRICT INVOICE MATCH) */}
       {/* ========================================================================= */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <div>
-            <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              QUICK ACTIONS
-            </span>
-            <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F]">Borrower Actions & Shortcuts</h2>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {loanSummary ? (
-            <Link
-              to={`/customer/loans/${loanSummary.id}`}
-              className="p-4 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
-            >
-              <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
-                <IndianRupee className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-bold text-[#0F172A]">View My Loan</span>
-              <span className="text-[10px] text-[#64748B] mt-0.5">#{loanSummary.applicationNumber}</span>
-            </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={handleApplyClick}
-              className="p-4 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
-            >
-              <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
-                <IndianRupee className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-bold text-[#0F172A]">Apply for Loan</span>
-              <span className="text-[10px] text-[#64748B] mt-0.5">Fast application</span>
-            </button>
-          )}
-
-          <Link
-            to="/customer/kyc"
-            className="p-4 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
-              <Upload className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-[#0F172A]">KYC Verification</span>
-            <span className="text-[10px] text-[#64748B] mt-0.5">Aadhaar status</span>
-          </Link>
-
-          <Link
-            to="/customer/documents"
-            className="p-4 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
-              <FileText className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-[#0F172A]">My Documents</span>
-            <span className="text-[10px] text-[#64748B] mt-0.5">Upload & history</span>
-          </Link>
-
-          <Link
-            to="/customer/loans"
-            className="p-4 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
-              <Clock className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-[#0F172A]">Loan History</span>
-            <span className="text-[10px] text-[#64748B] mt-0.5">Applications list</span>
-          </Link>
-
-          <Link
-            to={loanSummary ? `/customer/payment/${loanSummary.id}` : '/customer/payments'}
-            className="p-4 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
-              <CreditCard className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-[#0F172A]">Payments & Charges</span>
-            <span className="text-[10px] text-[#64748B] mt-0.5">Fee settlements</span>
-          </Link>
-
-          <Link
-            to="/customer/support"
-            className="p-4 rounded-2xl bg-white border border-[#D6E4F5] hover:border-[#2563EB] hover:shadow-sm transition-all group flex flex-col items-center text-center shadow-xs"
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
-              <HelpCircle className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-[#0F172A]">Borrower Support</span>
-            <span className="text-[10px] text-[#64748B] mt-0.5">Helpdesk tickets</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 4. ACTIVE CHARGES & FEES (APPLIED CHARGES - HIGHER NEAR TOP)              */}
-      {/* ========================================================================= */}
-      <div className="space-y-4">
+      <div id="section-charges-and-fees" className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
           <div>
             <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              APPLIED CHARGES & FEES
+              3. APPLIED CHARGES & FEES
             </span>
             <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-[#2563EB]" />
-              <span>Assigned Application Charges & Fee Settlements</span>
+              <span>All Applicable Application Charges & Invoices</span>
             </h2>
-            <p className="text-xs text-[#64748B]">Active stage-appropriate fees requiring borrower settlement</p>
+            <p className="text-xs text-[#64748B]">All statutory and administrative charges assigned to this loan facility</p>
           </div>
           <Badge className="bg-[#EFF6FF] text-[#2563EB] border border-[#D6E4F5] text-xs font-bold px-3 py-1 w-fit">
-            {pendingCharges.length > 0 ? `${pendingCharges.length} Pending Action` : 'All Charges Up to Date'}
+            {allApplicableCharges.length} Applicable Charges
           </Badge>
         </div>
 
-        {pendingCharges.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {pendingCharges.map((chg) => {
-              const displayName = normalizeChargeName(chg.name);
-              const hasSubmittedUtr = Boolean(chg.transactionRef);
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {allApplicableCharges.map((chg) => {
+            const displayName = normalizeChargeName(chg.name);
+            const isPaid = chg.status === 'PAID';
+            const isUnderVerification = chg.status === 'UNDER_VERIFICATION' || (Boolean(chg.transactionRef) && !isPaid);
 
-              return (
-                <div
-                  key={chg.id}
-                  className="p-5 rounded-2xl border border-[#D6E4F5] bg-white shadow-xs space-y-4 hover:border-[#2563EB] transition-all"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base font-bold text-[#0F172A]">{displayName}</span>
-                        {displayName.includes('TDS') && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#D6E4F5]">
-                            Statutory
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-[#64748B]">{chg.remark || 'Mandatory Application Settlement'}</p>
-                    </div>
+            // Strict Invoice Matching by charge ID, then invoice ID, then exact normalized name
+            const matchedInvoice = invoicesList.find(
+              (inv: any) =>
+                inv.chargeId === chg.id ||
+                inv.id === chg.id ||
+                (inv.chargeName && normalizeChargeName(inv.chargeName).toLowerCase() === displayName.toLowerCase())
+            );
 
-                    <div className="text-right shrink-0">
-                      <span className="text-lg sm:text-xl font-black text-[#0F172A] font-mono block">
-                        ₹{chg.amount.toLocaleString('en-IN')}
-                      </span>
-                      {hasSubmittedUtr ? (
-                        <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 text-[10px] font-bold px-2 py-0.5 mt-1">
-                          <Clock className="w-3 h-3 mr-1" /> Pending Verification
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-amber-50 text-[#F59E0B] border border-amber-200 text-[10px] font-bold px-2 py-0.5 mt-1">
-                          <AlertCircle className="w-3 h-3 mr-1" /> Payment Required
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-[#D6E4F5] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                    <div className="text-[11px] text-[#64748B]">
-                      {hasSubmittedUtr ? (
-                        <span>Submitted UTR: <strong className="font-mono text-[#0F172A]">{chg.transactionRef}</strong></span>
-                      ) : (
-                        <span>Status: <strong className="text-amber-700">Awaiting payment settlement</strong></span>
-                      )}
-                    </div>
-
+            return (
+              <div
+                key={chg.id}
+                className={`p-5 rounded-2xl border transition-all bg-white shadow-xs space-y-4 ${
+                  isPaid ? 'border-emerald-200 bg-emerald-50/20' : 'border-[#D6E4F5] hover:border-[#2563EB]'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      {!hasSubmittedUtr ? (
-                        <>
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              navigate(loanSummary ? `/customer/payment/${loanSummary.id}?chargeId=${chg.id}` : `/customer/payments?chargeId=${chg.id}`);
-                            }}
-                            className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs h-9 px-4 font-bold rounded-xl shadow-xs flex items-center gap-1"
-                          >
-                            <span>Pay Now</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </Button>
-                          <Link to={loanSummary ? `/customer/payment/${loanSummary.id}?chargeId=${chg.id}` : `/customer/payments?chargeId=${chg.id}`}>
-                            <Button variant="outline" size="sm" className="text-xs h-9 px-3 border-[#D6E4F5] text-[#0F172A] font-semibold rounded-xl bg-white">
-                              View Details
-                            </Button>
-                          </Link>
-                        </>
-                      ) : (
-                        <span className="text-[11px] text-[#2563EB] font-semibold bg-[#EFF6FF] px-3 py-1.5 rounded-xl border border-[#D6E4F5]">
-                          Under Verification
+                      <span className="text-base font-bold text-[#0F172A]">{displayName}</span>
+                      {displayName.includes('TDS') && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#D6E4F5]">
+                          Statutory
                         </span>
                       )}
                     </div>
+                    <p className="text-xs text-[#64748B]">{chg.remark || 'Official Application Processing Fee'}</p>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="text-lg sm:text-xl font-black text-[#0F172A] font-mono block">
+                      ₹{chg.amount.toLocaleString('en-IN')}
+                    </span>
+                    {isPaid ? (
+                      <Badge className="bg-emerald-50 text-[#16A34A] border border-emerald-200 text-[10px] font-bold px-2 py-0.5 mt-1">
+                        <CheckCircle2 className="w-3 h-3 mr-1" /> Paid ✓
+                      </Badge>
+                    ) : isUnderVerification ? (
+                      <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 text-[10px] font-bold px-2 py-0.5 mt-1">
+                        <Clock className="w-3 h-3 mr-1" /> Pending Verification
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-50 text-[#F59E0B] border border-amber-200 text-[10px] font-bold px-2 py-0.5 mt-1">
+                        <AlertCircle className="w-3 h-3 mr-1" /> Payment Required
+                      </Badge>
+                    )}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <Card className="p-6 bg-white border-[#D6E4F5] text-center rounded-2xl shadow-xs space-y-2">
-            <CheckCircle2 className="w-8 h-8 text-[#16A34A] mx-auto opacity-80" />
-            <h4 className="text-sm font-bold text-[#0F172A]">No payment is currently required</h4>
-            <p className="text-xs text-[#64748B] max-w-md mx-auto">
-              All active charges are up to date. Any scheduled verification fees or statutory charges will appear here automatically.
-            </p>
-          </Card>
-        )}
+
+                <div className="pt-3 border-t border-[#D6E4F5] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="text-[11px] text-[#64748B]">
+                    {isPaid ? (
+                      <span>
+                        Settled: <strong className="text-[#16A34A]">{new Date(chg.paidAt || chg.createdAt).toLocaleDateString('en-IN')}</strong>
+                        {chg.transactionRef && <> • UTR: <strong className="font-mono text-[#0F172A]">{chg.transactionRef}</strong></>}
+                      </span>
+                    ) : isUnderVerification ? (
+                      <span>Submitted UTR: <strong className="font-mono text-[#0F172A]">{chg.transactionRef}</strong></span>
+                    ) : (
+                      <span>Status: <strong className="text-amber-700">Awaiting payment settlement</strong></span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isPaid ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewInvoice(matchedInvoice?.id || chg.id, `${displayName} Invoice`)}
+                          className="text-xs h-9 px-3 border-[#D6E4F5] text-[#0F172A] hover:bg-[#EFF6FF] font-semibold rounded-xl bg-white shadow-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1 text-[#2563EB]" /> View Invoice
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={downloadingInvoiceId === (matchedInvoice?.id || chg.id)}
+                          onClick={() => handleDownloadInvoice(matchedInvoice?.id || chg.id, matchedInvoice?.invoiceNumber || displayName)}
+                          className="text-xs h-9 px-3.5 bg-[#16A34A] hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs"
+                        >
+                          {downloadingInvoiceId === (matchedInvoice?.id || chg.id) ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Download className="w-3.5 h-3.5 mr-1" /> Download
+                            </>
+                          )}
+                        </Button>
+                      </>
+                    ) : isUnderVerification ? (
+                      <span className="text-[11px] text-[#2563EB] font-semibold bg-[#EFF6FF] px-3 py-1.5 rounded-xl border border-[#D6E4F5]">
+                        Under Verification
+                      </span>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            navigate(loanSummary ? `/customer/payment/${loanSummary.id}?chargeId=${chg.id}` : `/customer/payments?chargeId=${chg.id}`);
+                          }}
+                          className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs h-9 px-4 font-bold rounded-xl shadow-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Pay Now</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                        <Link to={loanSummary ? `/customer/payment/${loanSummary.id}?chargeId=${chg.id}` : `/customer/payments?chargeId=${chg.id}`}>
+                          <Button variant="outline" size="sm" className="text-xs h-9 px-3 border-[#D6E4F5] text-[#0F172A] font-semibold rounded-xl bg-white">
+                            View Details
+                          </Button>
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 5. IMPORTANT UPDATE / AGREEMENT NOTICE (LARGE PROMINENT BOX)              */}
+      {/* 4. LOAN STATUS / PROGRESS (LIFECYCLE TIMELINE & AUDIT CHECKLIST)          */}
       {/* ========================================================================= */}
-      {loanSummary?.status === 'APPROVED' && (
-        <div className="space-y-2">
-          <div className="p-5 sm:p-6 bg-gradient-to-r from-emerald-50 via-emerald-50/70 to-[#EFF6FF] border border-emerald-200 rounded-3xl shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-start space-x-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-[#16A34A] flex items-center justify-center shrink-0">
-                  <FileSignature className="w-6 h-6" />
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-[#16A34A] uppercase tracking-wider block">
-                    IMPORTANT UPDATE
-                  </span>
-                  <h3 className="text-base sm:text-lg font-black text-[#0F2A5F]">
-                    Loan Agreement & Official Sanction
-                  </h3>
-                  <p className="text-xs text-[#64748B] mt-0.5 max-w-2xl">
-                    {loanSummary.agreementAccepted
-                      ? 'Your Master Loan Agreement has been digitally signed and submitted for disbursement clearance.'
-                      : 'Your loan application has been approved! Please review and electronically sign your Master Loan Agreement.'}
-                  </p>
-                </div>
+      <div id="section-loan-status-progress" className="space-y-4">
+        <Card className="bg-white border-[#D6E4F5] rounded-3xl shadow-xs overflow-hidden">
+          <CardHeader className="p-5 sm:p-6 pb-3 border-b border-[#D6E4F5]/60 bg-[#F7FAFF]">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block mb-0.5">
+                  4. LOAN PROGRESS
+                </span>
+                <CardTitle className="text-base sm:text-lg font-extrabold text-[#0F2A5F] flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-[#2563EB]" />
+                  <span>Borrower Journey & Loan Lifecycle</span>
+                </CardTitle>
+              </div>
+              <span className="text-xs font-semibold text-[#64748B]">7 Key Stages</span>
+            </div>
+            <CardDescription className="text-xs text-[#64748B] mt-0.5">
+              Live stage-by-stage audit trail from application submission to bank disbursement
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="p-5 sm:p-6">
+            <div className="relative py-2">
+              <div className="hidden md:block absolute top-6 left-8 right-8 h-0.5 bg-[#D6E4F5] z-0" />
+              <div className="hidden md:flex items-start justify-between relative z-10">
+                {timeline.map((item, idx) => (
+                  <div key={item.step} className="flex flex-col items-center text-center max-w-[120px]">
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs mb-2 transition-all ${
+                        item.completed
+                          ? 'bg-[#16A34A] text-white shadow-xs'
+                          : item.current
+                          ? 'bg-[#2563EB] text-white ring-4 ring-blue-100 font-bold'
+                          : 'bg-[#F7FAFF] text-[#64748B] border border-[#D6E4F5]'
+                      }`}
+                    >
+                      {item.completed ? '✓' : idx + 1}
+                    </div>
+                    <span className={`text-xs font-semibold leading-tight ${item.completed || item.current ? 'text-[#0F172A]' : 'text-[#64748B]'}`}>
+                      {item.title}
+                    </span>
+                    {item.current && (
+                      <span className="mt-1 text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
+                        Current
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className={loanSummary.agreementAccepted ? 'bg-emerald-100 text-[#16A34A] border-emerald-300 font-bold px-3 py-1 text-xs' : 'bg-amber-100 text-amber-800 border-amber-300 font-bold px-3 py-1 text-xs'}>
-                  {loanSummary.agreementAccepted ? 'Status: SIGNED / SUBMITTED' : 'Status: PENDING SIGNATURE'}
-                </Badge>
-
-                {loanSummary.agreementAccepted ? (
-                  <Link to={`/customer/agreement/${loanSummary.id}`}>
-                    <Button size="sm" variant="outline" className="text-xs h-9 px-4 border-[#D6E4F5] text-[#0F172A] hover:bg-white font-bold rounded-xl bg-white shadow-xs flex items-center gap-1.5">
-                      <Eye className="w-3.5 h-3.5 text-[#2563EB]" />
-                      <span>View Agreement</span>
-                    </Button>
-                  </Link>
-                ) : (
-                  <Link to={`/customer/agreement/${loanSummary.id}`}>
-                    <Button size="sm" className="bg-[#16A34A] hover:bg-emerald-700 text-white text-xs h-9 px-5 rounded-xl font-bold shadow-xs flex items-center gap-1.5">
-                      <span>Sign Agreement</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
-                )}
+              <div className="md:hidden space-y-3">
+                {timeline.map((item, idx) => (
+                  <div key={item.step} className="flex items-center space-x-3">
+                    <div
+                      className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                        item.completed
+                          ? 'bg-[#16A34A] text-white shadow-xs'
+                          : item.current
+                          ? 'bg-[#2563EB] text-white ring-2 ring-blue-200'
+                          : 'bg-[#F7FAFF] text-[#64748B] border border-[#D6E4F5]'
+                      }`}
+                    >
+                      {item.completed ? '✓' : idx + 1}
+                    </div>
+                    <span className={`text-xs font-semibold ${item.completed || item.current ? 'text-[#0F172A]' : 'text-[#64748B]'}`}>
+                      {item.title}
+                    </span>
+                    {item.current && <Badge className="text-[10px] h-4 bg-[#EFF6FF] text-[#2563EB] border-[#D6E4F5] font-bold">Current</Badge>}
+                  </div>
+                ))}
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* 8-Stage Audit Checklist */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F172A]">1. Application</span>
+              <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                Completed ✓
+              </span>
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {loanSummary ? `Application #${loanSummary.applicationNumber} registered` : 'Customer account established'}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F172A]">2. KYC Verification</span>
+              {isKycApproved ? (
+                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Approved ✓
+                </span>
+              ) : kycSummary.status === 'UNDER_REVIEW' ? (
+                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
+                  In Review
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  Pending
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {isKycApproved ? 'Aadhaar identity verified' : `${kycSummary.progressPercent}% checklist completed`}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F172A]">3. Loan Documents</span>
+              {allDocsReady ? (
+                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  {uploadedCount}/4 Uploaded ✓
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  {uploadedCount}/4 Uploaded
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {allDocsReady ? 'Mandatory documents uploaded' : 'Upload remaining documents'}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F172A]">4. Underwriting</span>
+              {loanSummary?.status === 'APPROVED' ? (
+                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Approved ✓
+                </span>
+              ) : loanSummary?.status === 'REJECTED' ? (
+                <span className="text-[10px] font-bold text-[#DC2626] bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                  Declined
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
+                  In Review
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {loanSummary?.status === 'APPROVED' ? 'Credit appraisal cleared' : 'Risk & eligibility assessment'}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F172A]">5. Verification Payment</span>
+              {paidCharges.length > 0 ? (
+                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Verified ✓
+                </span>
+              ) : pendingCharges.length > 0 ? (
+                <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  Payment Required
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-[#64748B] bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  Up to Date
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {paidCharges.length > 0 ? 'Application charges settled' : 'Nominal verification fee status'}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F172A]">6. TDS/TSD Charges</span>
+              {hasTdsPaid ? (
+                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Settled ✓
+                </span>
+              ) : hasTdsPending ? (
+                <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  Settlement Required
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-[#64748B] bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  Standard Clearance
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {hasTdsPaid ? 'Tax & statutory clearance verified' : 'Statutory tax settlement compliance'}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F172A]">7. Loan Approval</span>
+              {loanSummary?.status === 'APPROVED' ? (
+                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Sanctioned ✓
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
+                  In Progress
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {loanSummary?.status === 'APPROVED' ? 'Formal sanction letter issued' : 'Underwriting decision pending'}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0F172A]">8. Disbursement</span>
+              {loanSummary?.isDisbursed ? (
+                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Disbursed ✓
+                </span>
+              ) : loanSummary?.status === 'APPROVED' ? (
+                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
+                  Ready
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-[#64748B] bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  Queued
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#64748B]">
+              {loanSummary?.isDisbursed ? 'Direct bank transfer complete' : 'Direct NEFT/RTGS bank release'}
+            </p>
           </div>
         </div>
-      )}
+      </div>
 
       {/* ========================================================================= */}
-      {/* 6. LOAN PROGRESS (LIFECYCLE TIMELINE)                                     */}
+      {/* 5. KYC DOCUMENTS                                                          */}
       {/* ========================================================================= */}
-      <Card className="bg-white border-[#D6E4F5] rounded-3xl shadow-xs overflow-hidden">
-        <CardHeader className="p-5 sm:p-6 pb-3 border-b border-[#D6E4F5]/60 bg-[#F7FAFF]">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block mb-0.5">
-                LOAN PROGRESS
-              </span>
-              <CardTitle className="text-base sm:text-lg font-extrabold text-[#0F2A5F] flex items-center gap-2">
-                <Clock className="w-4 h-4 text-[#2563EB]" />
-                <span>Borrower Journey & Loan Lifecycle</span>
-              </CardTitle>
-            </div>
-            <span className="text-xs font-semibold text-[#64748B]">7 Key Stages</span>
+      <div id="section-kyc-documents" className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
+              5. KYC DOCUMENTS
+            </span>
+            <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-[#2563EB]" />
+              <span>Identity Verification & Aadhaar Compliance</span>
+            </h2>
+            <p className="text-xs text-[#64748B]">Government identity verification and regulatory KYC compliance record</p>
           </div>
-          <CardDescription className="text-xs text-[#64748B] mt-0.5">
-            Live stage-by-stage audit trail from application submission to bank disbursement
-          </CardDescription>
-        </CardHeader>
+        </div>
 
-        <CardContent className="p-5 sm:p-6">
-          <div className="relative py-2">
-            {/* Desktop Horizontal Line */}
-            <div className="hidden md:block absolute top-6 left-8 right-8 h-0.5 bg-[#D6E4F5] z-0" />
+        <Card className="p-5 sm:p-6 bg-white border-[#D6E4F5] rounded-3xl shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start space-x-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-[#0F172A]">Aadhaar & Personal Identity Verification</h3>
+                  {isKycApproved ? (
+                    <Badge className="bg-emerald-50 text-[#16A34A] border border-emerald-200 font-bold text-[10px] px-2.5 py-0.5">
+                      VERIFIED ✓
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] px-2.5 py-0.5">
+                      CHECKLIST PENDING
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-[#64748B]">
+                  Masked Aadhaar: <strong className="font-mono text-[#0F172A]">{customer.aadhaarMasked}</strong> • Completion: <strong>{kycSummary.progressPercent}%</strong>
+                </p>
+              </div>
+            </div>
 
-            <div className="hidden md:flex items-start justify-between relative z-10">
-              {timeline.map((item, idx) => (
-                <div key={item.step} className="flex flex-col items-center text-center max-w-[120px]">
-                  <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs mb-2 transition-all ${
-                      item.completed
-                        ? 'bg-[#16A34A] text-white shadow-xs'
-                        : item.current
-                        ? 'bg-[#2563EB] text-white ring-4 ring-blue-100 font-bold'
-                        : 'bg-[#F7FAFF] text-[#64748B] border border-[#D6E4F5]'
-                    }`}
-                  >
-                    {item.completed ? '✓' : idx + 1}
-                  </div>
-                  <span className={`text-xs font-semibold leading-tight ${item.completed || item.current ? 'text-[#0F172A]' : 'text-[#64748B]'}`}>
-                    {item.title}
-                  </span>
-                  {item.current && (
-                    <span className="mt-1 text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
-                      Current
+            <div className="flex gap-2">
+              <Link to="/customer/kyc">
+                <Button variant="outline" size="sm" className="h-9 px-4 text-xs border-[#D6E4F5] text-[#0F172A] hover:bg-[#EFF6FF] font-semibold rounded-xl bg-white shadow-xs">
+                  <Eye className="w-3.5 h-3.5 mr-1 text-[#2563EB]" /> View KYC Details
+                </Button>
+              </Link>
+              {!isKycApproved && (
+                <Link to="/customer/kyc">
+                  <Button size="sm" className="h-9 px-4 text-xs bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl shadow-xs">
+                    Complete KYC
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 6. LOAN DOCUMENTS                                                         */}
+      {/* ========================================================================= */}
+      <div id="section-loan-documents" className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
+              6. LOAN DOCUMENTS
+            </span>
+            <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-[#2563EB]" />
+              <span>Required Financial & Underwriting Documents</span>
+            </h2>
+            <p className="text-xs text-[#64748B]">Mandatory PAN Card, Bank Statement, and Income verification files</p>
+          </div>
+          <Link to="/customer/documents">
+            <Button variant="outline" size="sm" className="text-xs h-8 px-3 border-[#D6E4F5] text-[#0F172A] font-semibold rounded-xl bg-white">
+              Document Center
+            </Button>
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { title: 'PAN Card', type: 'PAN', desc: 'Identity & tax ID verification' },
+            { title: 'Bank Statement', type: 'BANK_STATEMENT', desc: 'Last 3-6 months banking records' },
+            { title: 'Income Proof / Salary Slip', type: 'INCOME_PROOF', desc: 'Monthly income documentation' },
+            { title: 'Address / Supporting Proof', type: 'OTHER', desc: 'Utility bill or rent agreement' },
+          ].map((item) => {
+            const isUploaded = uploadedDocsList.some((d) => d.documentType === item.type && d.status !== 'REJECTED');
+            return (
+              <div key={item.type} className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#0F172A]">{item.title}</span>
+                  {isUploaded ? (
+                    <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Uploaded ✓
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                      Pending
                     </span>
                   )}
                 </div>
-              ))}
+                <p className="text-[11px] text-[#64748B]">{item.desc}</p>
+                <Link to="/customer/documents" className="block pt-1">
+                  <Button variant="outline" size="sm" className="w-full text-[11px] h-8 border-[#D6E4F5] text-[#2563EB] hover:bg-[#EFF6FF] rounded-lg">
+                    {isUploaded ? 'View Document' : 'Upload File'}
+                  </Button>
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 7. LOAN APPROVAL LETTER                                                   */}
+      {/* ========================================================================= */}
+      <div id="section-approval-letter" className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
+              7. LOAN APPROVAL LETTER
+            </span>
+            <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
+              <FileText className="w-4 h-4 text-[#2563EB]" />
+              <span>Official Underwriting Sanction Letter</span>
+            </h2>
+            <p className="text-xs text-[#64748B]">Authorized approval letter featuring official company verification seal</p>
+          </div>
+        </div>
+
+        <Card className="p-5 sm:p-6 bg-white border-[#D6E4F5] rounded-3xl shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start space-x-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#16A34A] flex items-center justify-center shrink-0">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-[#0F172A]">Formal Loan Approval & Sanction Letter</h3>
+                  {loanSummary?.status === 'APPROVED' ? (
+                    <Badge className="bg-emerald-50 text-[#16A34A] border border-emerald-200 font-bold text-[10px] px-2.5 py-0.5">
+                      SANCTIONED ✓
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-slate-100 text-[#64748B] border border-slate-200 font-bold text-[10px] px-2.5 py-0.5">
+                      UNDER REVIEW
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-[#64748B]">
+                  {loanSummary?.status === 'APPROVED'
+                    ? `Sanctioned Amount: ₹${sanctionedAmount.toLocaleString('en-IN')} • Term: ${tenureValue} Months @ ${interestRateValue}% p.a.`
+                    : 'Approval letter will be generated automatically upon underwriting approval.'}
+                </p>
+              </div>
             </div>
 
-            {/* Mobile Vertical Timeline */}
-            <div className="md:hidden space-y-3">
-              {timeline.map((item, idx) => (
-                <div key={item.step} className="flex items-center space-x-3">
-                  <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-                      item.completed
-                        ? 'bg-[#16A34A] text-white shadow-xs'
-                        : item.current
-                        ? 'bg-[#2563EB] text-white ring-2 ring-blue-200'
-                        : 'bg-[#F7FAFF] text-[#64748B] border border-[#D6E4F5]'
-                    }`}
+            <div className="flex gap-2">
+              {loanSummary?.status === 'APPROVED' ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const res = await apiClient.get(`/customer/loans/${loanSummary.id}/approval-letter/pdf`, { responseType: 'blob' });
+                        const blob = new Blob([res.data], { type: 'application/pdf' });
+                        const url = window.URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                      } catch {
+                        alert('Could not render approval letter.');
+                      }
+                    }}
+                    className="h-9 px-4 text-xs border-[#D6E4F5] text-[#0F172A] hover:bg-[#EFF6FF] font-semibold rounded-xl bg-white shadow-xs"
                   >
-                    {item.completed ? '✓' : idx + 1}
-                  </div>
-                  <span className={`text-xs font-semibold ${item.completed || item.current ? 'text-[#0F172A]' : 'text-[#64748B]'}`}>
-                    {item.title}
-                  </span>
-                  {item.current && <Badge className="text-[10px] h-4 bg-[#EFF6FF] text-[#2563EB] border-[#D6E4F5] font-bold">Current</Badge>}
-                </div>
-              ))}
+                    <Eye className="w-3.5 h-3.5 mr-1 text-[#2563EB]" /> View Letter
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        const res = await apiClient.get(`/customer/loans/${loanSummary.id}/approval-letter/pdf?download=true`, { responseType: 'blob' });
+                        const blob = new Blob([res.data], { type: 'application/pdf' });
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `Approval_Letter_${loanSummary.applicationNumber}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                      } catch {
+                        alert('Could not download approval letter.');
+                      }
+                    }}
+                    className="h-9 px-4 text-xs bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl shadow-xs"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" /> Download PDF
+                  </Button>
+                </>
+              ) : (
+                <span className="text-xs text-[#64748B] italic py-1.5">Available upon underwriting sanction</span>
+              )}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </Card>
+      </div>
 
       {/* ========================================================================= */}
-      {/* 7. PAYMENT & INVOICE HISTORY                                              */}
+      {/* 8. LOAN AGREEMENT                                                         */}
       {/* ========================================================================= */}
-      <div className="space-y-4">
+      <div id="section-loan-agreement" className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
+              8. LOAN AGREEMENT
+            </span>
+            <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
+              <FileSignature className="w-4 h-4 text-[#2563EB]" />
+              <span>Master Loan Agreement & Electronic Contract</span>
+            </h2>
+            <p className="text-xs text-[#64748B]">Legally binding master loan agreement digitally executed between lender and borrower</p>
+          </div>
+        </div>
+
+        <Card className="p-5 sm:p-6 bg-white border-[#D6E4F5] rounded-3xl shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start space-x-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+                <FileSignature className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-[#0F172A]">Master Loan Agreement Contract</h3>
+                  {loanSummary?.agreementAccepted ? (
+                    <Badge className="bg-emerald-50 text-[#16A34A] border border-emerald-200 font-bold text-[10px] px-2.5 py-0.5">
+                      SIGNED & SUBMITTED ✓
+                    </Badge>
+                  ) : loanSummary?.status === 'APPROVED' ? (
+                    <Badge className="bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] px-2.5 py-0.5">
+                      SIGNATURE DUE
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-slate-100 text-[#64748B] border border-slate-200 font-bold text-[10px] px-2.5 py-0.5">
+                      PREPARING
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-[#64748B]">
+                  {loanSummary?.agreementAccepted
+                    ? 'Your agreement has been digitally signed and registered in the core banking archive.'
+                    : loanSummary?.status === 'APPROVED'
+                    ? 'Review the agreed terms and electronically sign to release loan disbursement.'
+                    : 'Agreement contract is prepared upon formal underwriting sanction.'}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              {loanSummary?.status === 'APPROVED' ? (
+                <Link to={`/customer/agreement/${loanSummary.id}`}>
+                  <Button className={`h-10 px-5 text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 ${
+                    loanSummary.agreementAccepted ? 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white' : 'bg-[#16A34A] hover:bg-emerald-700 text-white'
+                  }`}>
+                    {loanSummary.agreementAccepted ? (
+                      <>
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View Signed Agreement</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileSignature className="w-3.5 h-3.5" />
+                        <span>Review & Sign Agreement</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
+                  </Button>
+                </Link>
+              ) : (
+                <span className="text-xs text-[#64748B] italic py-1.5">Prepared upon loan approval</span>
+              )}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 9. PAYMENT & INVOICE HISTORY                                              */}
+      {/* ========================================================================= */}
+      <div id="section-payment-invoices" className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
           <div>
             <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              PAYMENT & INVOICE HISTORY
+              9. PAYMENT & INVOICE HISTORY
             </span>
             <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
               <Receipt className="w-4 h-4 text-[#2563EB]" />
               <span>Official Tax Invoices & Verified Payment Records</span>
             </h2>
-            <p className="text-xs text-[#64748B]">View verified payments and official invoices</p>
+            <p className="text-xs text-[#64748B]">Verified payment receipts and authoritative PDF invoices</p>
           </div>
         </div>
 
@@ -1092,7 +1559,7 @@ export const CustomerHome: React.FC = () => {
                       size="sm"
                       variant="outline"
                       onClick={() => handleViewInvoice(inv.chargeId || inv.id, `${displayName} Invoice`)}
-                      className="flex-1 h-9 text-xs border-[#D6E4F5] text-[#0F172A] hover:bg-[#EFF6FF] font-semibold rounded-xl bg-white"
+                      className="flex-1 h-9 text-xs border-[#D6E4F5] text-[#0F172A] hover:bg-[#EFF6FF] font-semibold rounded-xl bg-white shadow-xs"
                     >
                       <Eye className="w-3.5 h-3.5 mr-1 text-[#2563EB]" /> View Invoice
                     </Button>
@@ -1127,377 +1594,13 @@ export const CustomerHome: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 8. CURRENT LOAN STATUS (8-STAGE AUDIT CHECKLIST)                          */}
+      {/* 10. CUSTOMER INFORMATION                                                  */}
       {/* ========================================================================= */}
-      <div className="space-y-4">
+      <div id="section-customer-info" className="space-y-4">
         <div className="flex items-center justify-between px-1">
           <div>
             <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              CURRENT LOAN STATUS
-            </span>
-            <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#2563EB]" />
-              <span>Comprehensive Stage & Verification Checklist</span>
-            </h2>
-            <p className="text-xs text-[#64748B]">Live stage-by-stage audit trail and verification status</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Stage 1: Application */}
-          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F172A]">1. Application</span>
-              <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                Completed ✓
-              </span>
-            </div>
-            <p className="text-xs text-[#64748B]">
-              {loanSummary ? `Application #${loanSummary.applicationNumber} registered` : 'Customer account established'}
-            </p>
-          </div>
-
-          {/* Stage 2: KYC */}
-          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F172A]">2. KYC Verification</span>
-              {isKycApproved ? (
-                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Approved ✓
-                </span>
-              ) : kycSummary.status === 'UNDER_REVIEW' ? (
-                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
-                  In Review
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  Pending
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[#64748B]">
-              {isKycApproved ? 'Aadhaar identity verified' : `${kycSummary.progressPercent}% checklist completed`}
-            </p>
-          </div>
-
-          {/* Stage 3: Loan Documents */}
-          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F172A]">3. Loan Documents</span>
-              {allDocsReady ? (
-                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  {uploadedCount}/4 Uploaded ✓
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  {uploadedCount}/4 Uploaded
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[#64748B]">
-              {allDocsReady ? 'Mandatory documents uploaded' : 'Upload remaining documents'}
-            </p>
-          </div>
-
-          {/* Stage 4: Underwriting */}
-          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F172A]">4. Underwriting</span>
-              {loanSummary?.status === 'APPROVED' ? (
-                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Approved ✓
-                </span>
-              ) : loanSummary?.status === 'REJECTED' ? (
-                <span className="text-[10px] font-bold text-[#DC2626] bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-                  Declined
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
-                  In Review
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[#64748B]">
-              {loanSummary?.status === 'APPROVED' ? 'Credit appraisal cleared' : 'Risk & eligibility assessment'}
-            </p>
-          </div>
-
-          {/* Stage 5: Payment */}
-          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F172A]">5. Verification Payment</span>
-              {paidCharges.length > 0 ? (
-                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Verified ✓
-                </span>
-              ) : pendingCharges.length > 0 ? (
-                <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  Payment Required
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold text-[#64748B] bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                  Up to Date
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[#64748B]">
-              {paidCharges.length > 0 ? 'Application charges settled' : 'Nominal verification fee status'}
-            </p>
-          </div>
-
-          {/* Stage 6: TDS / TSD */}
-          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F172A]">6. TDS/TSD Charges</span>
-              {hasTdsPaid ? (
-                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Settled ✓
-                </span>
-              ) : hasTdsPending ? (
-                <span className="text-[10px] font-bold text-[#F59E0B] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  Settlement Required
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold text-[#64748B] bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                  Standard Clearance
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[#64748B]">
-              {hasTdsPaid ? 'Tax & statutory clearance verified' : 'Statutory tax settlement compliance'}
-            </p>
-          </div>
-
-          {/* Stage 7: Loan Approval */}
-          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F172A]">7. Loan Approval</span>
-              {loanSummary?.status === 'APPROVED' ? (
-                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Sanctioned ✓
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
-                  In Progress
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[#64748B]">
-              {loanSummary?.status === 'APPROVED' ? 'Formal sanction letter issued' : 'Underwriting decision pending'}
-            </p>
-          </div>
-
-          {/* Stage 8: Disbursement */}
-          <div className="p-4 rounded-2xl bg-white border border-[#D6E4F5] shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0F172A]">8. Disbursement</span>
-              {loanSummary?.isDisbursed ? (
-                <span className="text-[10px] font-bold text-[#16A34A] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Disbursed ✓
-                </span>
-              ) : loanSummary?.status === 'APPROVED' ? (
-                <span className="text-[10px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-full border border-[#D6E4F5]">
-                  Ready
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold text-[#64748B] bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                  Queued
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[#64748B]">
-              {loanSummary?.isDisbursed ? 'Direct bank transfer complete' : 'Direct NEFT/RTGS bank release'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 9. DOCUMENT CENTER (LARGE RECTANGULAR CARDS)                              */}
-      {/* ========================================================================= */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
-          <div>
-            <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              DOCUMENT CENTER
-            </span>
-            <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
-              <FolderOpen className="w-4 h-4 text-[#2563EB]" />
-              <span>Authoritative Financial Documents & Downloads</span>
-            </h2>
-            <p className="text-xs text-[#64748B]">Instantly access official approval letters, signed agreements, and tax invoices</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Card 1: KYC Verification Document */}
-          <div className="p-5 rounded-2xl bg-white border border-[#D6E4F5] flex flex-col justify-between hover:border-[#2563EB] transition-all shadow-xs space-y-4">
-            <div className="space-y-2.5">
-              <div className="flex items-start justify-between">
-                <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                {isKycApproved ? (
-                  <Badge className="bg-emerald-50 text-[#16A34A] border border-emerald-200 font-bold text-[10px] px-2 py-0.5">
-                    VERIFIED ✓
-                  </Badge>
-                ) : (
-                  <Badge className="bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] px-2 py-0.5">
-                    PENDING
-                  </Badge>
-                )}
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[#0F172A]">KYC Verification</h3>
-                <p className="text-xs text-[#64748B] mt-0.5">Identity verification documents and government compliance record.</p>
-              </div>
-            </div>
-            <div className="pt-3 border-t border-[#D6E4F5] flex gap-2">
-              <Link to="/customer/kyc" className="flex-1">
-                <Button size="sm" variant="outline" className="w-full text-xs h-9 border-[#D6E4F5] text-[#0F172A] hover:bg-[#EFF6FF] font-semibold rounded-xl bg-white">
-                  <Eye className="w-3.5 h-3.5 mr-1 text-[#2563EB]" /> View KYC
-                </Button>
-              </Link>
-              {!isKycApproved && (
-                <Link to="/customer/kyc" className="flex-1">
-                  <Button size="sm" className="w-full text-xs h-9 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl shadow-xs">
-                    Complete KYC
-                  </Button>
-                </Link>
-              )}
-            </div>
-          </div>
-
-          {/* Card 2: Loan Approval Letter */}
-          <div className="p-5 rounded-2xl bg-white border border-[#D6E4F5] flex flex-col justify-between hover:border-[#2563EB] transition-all shadow-xs space-y-4">
-            <div className="space-y-2.5">
-              <div className="flex items-start justify-between">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#16A34A] flex items-center justify-center">
-                  <FileText className="w-5 h-5" />
-                </div>
-                {loanSummary?.status === 'APPROVED' ? (
-                  <Badge className="bg-emerald-50 text-[#16A34A] border border-emerald-200 font-bold text-[10px] px-2 py-0.5">
-                    SANCTIONED ✓
-                  </Badge>
-                ) : (
-                  <Badge className="bg-slate-100 text-[#64748B] border border-slate-200 font-bold text-[10px] px-2 py-0.5">
-                    IN REVIEW
-                  </Badge>
-                )}
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[#0F172A]">Loan Approval Letter</h3>
-                <p className="text-xs text-[#64748B] mt-0.5">Official sanction letter with authorized verification seal and terms.</p>
-              </div>
-            </div>
-            <div className="pt-3 border-t border-[#D6E4F5] flex gap-2">
-              {loanSummary?.status === 'APPROVED' ? (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        const res = await apiClient.get(`/customer/loans/${loanSummary.id}/approval-letter/pdf`, { responseType: 'blob' });
-                        const blob = new Blob([res.data], { type: 'application/pdf' });
-                        const url = window.URL.createObjectURL(blob);
-                        window.open(url, '_blank');
-                      } catch {
-                        alert('Could not render approval letter.');
-                      }
-                    }}
-                    className="flex-1 text-xs h-9 border-[#D6E4F5] text-[#0F172A] hover:bg-[#EFF6FF] font-semibold rounded-xl bg-white"
-                  >
-                    <Eye className="w-3.5 h-3.5 mr-1 text-[#2563EB]" /> View Letter
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        const res = await apiClient.get(`/customer/loans/${loanSummary.id}/approval-letter/pdf?download=true`, { responseType: 'blob' });
-                        const blob = new Blob([res.data], { type: 'application/pdf' });
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `Approval_Letter_${loanSummary.applicationNumber}.pdf`;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-                      } catch {
-                        alert('Could not download approval letter.');
-                      }
-                    }}
-                    className="flex-1 text-xs h-9 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl shadow-xs"
-                  >
-                    <Download className="w-3.5 h-3.5 mr-1" /> Download
-                  </Button>
-                </>
-              ) : (
-                <span className="text-[11px] text-[#64748B] italic py-1.5">Available upon underwriting sanction</span>
-              )}
-            </div>
-          </div>
-
-          {/* Card 3: Loan Agreement */}
-          <div className="p-5 rounded-2xl bg-white border border-[#D6E4F5] flex flex-col justify-between hover:border-[#2563EB] transition-all shadow-xs space-y-4">
-            <div className="space-y-2.5">
-              <div className="flex items-start justify-between">
-                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                  <FileSignature className="w-5 h-5" />
-                </div>
-                {loanSummary?.agreementAccepted ? (
-                  <Badge className="bg-emerald-50 text-[#16A34A] border border-emerald-200 font-bold text-[10px] px-2 py-0.5">
-                    SIGNED ✓
-                  </Badge>
-                ) : loanSummary?.status === 'APPROVED' ? (
-                  <Badge className="bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] px-2 py-0.5">
-                    SIGNATURE DUE
-                  </Badge>
-                ) : (
-                  <Badge className="bg-slate-100 text-[#64748B] border border-slate-200 font-bold text-[10px] px-2 py-0.5">
-                    PENDING
-                  </Badge>
-                )}
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[#0F172A]">Loan Agreement</h3>
-                <p className="text-xs text-[#64748B] mt-0.5">Master Loan Agreement contract executed between lender and borrower.</p>
-              </div>
-            </div>
-            <div className="pt-3 border-t border-[#D6E4F5] flex gap-2">
-              {loanSummary?.status === 'APPROVED' ? (
-                <Link to={`/customer/agreement/${loanSummary.id}`} className="w-full">
-                  <Button size="sm" className="w-full text-xs h-9 bg-[#16A34A] hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs flex items-center justify-center gap-1">
-                    {loanSummary.agreementAccepted ? (
-                      <>
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>View Signed Agreement</span>
-                      </>
-                    ) : (
-                      <>
-                        <FileSignature className="w-3.5 h-3.5" />
-                        <span>Sign Agreement</span>
-                      </>
-                    )}
-                  </Button>
-                </Link>
-              ) : (
-                <span className="text-[11px] text-[#64748B] italic py-1.5">Prepared upon sanction approval</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 10. CUSTOMER INFORMATION (DEDICATED SECTION)                              */}
-      {/* ========================================================================= */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between px-1">
-          <div>
-            <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              CUSTOMER INFORMATION
+              10. CUSTOMER INFORMATION
             </span>
             <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
               <User className="w-4 h-4 text-[#2563EB]" />
@@ -1567,13 +1670,13 @@ export const CustomerHome: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 11. BANK ACCOUNT DETAILS (SEPARATE DEDICATED CARD)                        */}
+      {/* 11. BANK ACCOUNT DETAILS                                                  */}
       {/* ========================================================================= */}
-      <div className="space-y-4">
+      <div id="section-bank-details" className="space-y-4">
         <div className="flex items-center justify-between px-1">
           <div>
             <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              BANK ACCOUNT DETAILS
+              11. BANK ACCOUNT DETAILS
             </span>
             <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
               <Landmark className="w-4 h-4 text-[#2563EB]" />
@@ -1621,13 +1724,13 @@ export const CustomerHome: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* 12. BORROWER SUPPORT                                                      */}
+      {/* 12. SUPPORT                                                               */}
       {/* ========================================================================= */}
-      <div className="space-y-3">
+      <div id="section-support" className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <div>
             <span className="text-[11px] font-bold text-[#2563EB] uppercase tracking-wider block">
-              BORROWER SUPPORT
+              12. BORROWER SUPPORT
             </span>
             <h2 className="text-base sm:text-lg font-bold text-[#0F2A5F] flex items-center gap-2">
               <HelpCircle className="w-4 h-4 text-[#2563EB]" />
