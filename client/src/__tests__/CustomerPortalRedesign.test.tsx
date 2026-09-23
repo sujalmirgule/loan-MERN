@@ -139,6 +139,17 @@ describe('Customer Portal Redesign & Loan Flow Synchronization Suite', () => {
     });
     vi.clearAllMocks();
 
+    if (!window.URL.createObjectURL) {
+      window.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+    } else {
+      vi.spyOn(window.URL, 'createObjectURL').mockImplementation(() => 'blob:mock-url');
+    }
+    if (!window.URL.revokeObjectURL) {
+      window.URL.revokeObjectURL = vi.fn();
+    } else {
+      vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {});
+    }
+
     (apiClient.get as any).mockImplementation((url: string) => {
       if (url.includes('/public/config') || url.includes('/public/domain-config')) {
         return Promise.resolve({
@@ -152,6 +163,12 @@ describe('Customer Portal Redesign & Loan Flow Synchronization Suite', () => {
       }
       if (url.includes('/customer/dashboard')) {
         return Promise.resolve({ data: mockDashboardData });
+      }
+      if (url.includes('/charges/') && url.includes('/invoice')) {
+        return Promise.resolve({ data: new Blob(['fake-pdf'], { type: 'application/pdf' }) });
+      }
+      if (url.includes('/customer/invoices/') && url.includes('/pdf')) {
+        return Promise.resolve({ data: new Blob(['fake-pdf'], { type: 'application/pdf' }) });
       }
       if (url.includes('/customer/charges')) {
         return Promise.resolve({ data: { success: true, data: mockChargesData } });
@@ -218,7 +235,7 @@ describe('Customer Portal Redesign & Loan Flow Synchronization Suite', () => {
     expect(normalizeChargeName('Application Processing Fee')).toBe('Application Processing Fee');
   });
 
-  it('TEST 2: CustomerHome renders all key financial sections in correct visual hierarchy', async () => {
+  it('TEST 2: CustomerHome renders all 11 sections in strict sequential order without Bank Account Details', async () => {
     render(
       <QueryClientProvider client={queryClient}>
         <BrandingProvider>
@@ -229,46 +246,69 @@ describe('Customer Portal Redesign & Loan Flow Synchronization Suite', () => {
       </QueryClientProvider>
     );
 
-    // Section 1: Customer / Loan Hero
+    // Section 1: LOAN OVERVIEW
     await waitFor(() => {
       expect(screen.getAllByText(/Application #LA-2026-999/i).length).toBeGreaterThan(0);
     });
+    const s1 = screen.getByText(/1\. LOAN OVERVIEW/i);
+    expect(s1).toBeInTheDocument();
 
-    // Section 2: Loan Overview / Financing Summary
-    expect(screen.getByText(/LOAN OVERVIEW/i)).toBeInTheDocument();
+    // Section 2: QUICK ACTIONS
+    const s2 = screen.getByRole('heading', { name: /QUICK ACTIONS/i });
+    expect(s2).toBeInTheDocument();
 
-    // Section 3: Quick Actions
-    expect(screen.getByText(/QUICK ACTIONS/i)).toBeInTheDocument();
+    // Section 3: LOAN FINANCIAL SUMMARY
+    const s3 = screen.getByRole('heading', { name: /LOAN FINANCIAL SUMMARY/i });
+    expect(s3).toBeInTheDocument();
 
-    // Section 4: Applied Charges & Fees
-    expect(screen.getByText(/APPLIED CHARGES & FEES/i)).toBeInTheDocument();
+    // Section 4: CHARGES & FEES
+    const s4 = screen.getByRole('heading', { name: /CHARGES & FEES/i });
+    expect(s4).toBeInTheDocument();
 
-    // Section 5: Important Update / Agreement Notice
-    expect(screen.getByText(/IMPORTANT UPDATE/i)).toBeInTheDocument();
+    // Section 5: PAYMENTS & INVOICES
+    const s5 = screen.getByRole('heading', { name: /PAYMENTS & INVOICES/i });
+    expect(s5).toBeInTheDocument();
 
-    // Section 6: Loan Progress
-    expect(screen.getByText(/LOAN PROGRESS/i)).toBeInTheDocument();
+    // Section 6: LOAN STATUS / PROGRESS
+    const s6 = screen.getByRole('heading', { name: /LOAN STATUS \/ PROGRESS/i });
+    expect(s6).toBeInTheDocument();
 
-    // Section 7: Payment & Invoice History
-    expect(screen.getByText(/PAYMENT & INVOICE HISTORY/i)).toBeInTheDocument();
+    // Section 7: KYC & DOCUMENTS
+    const s7 = screen.getByRole('heading', { name: /KYC & DOCUMENTS/i });
+    expect(s7).toBeInTheDocument();
 
-    // Section 8: Current Loan Status
-    expect(screen.getByText(/CURRENT LOAN STATUS/i)).toBeInTheDocument();
+    // Section 8: LOAN DOCUMENTS
+    const s8 = screen.getByRole('heading', { name: /LOAN DOCUMENTS/i });
+    expect(s8).toBeInTheDocument();
 
-    // Section 9: Document Center
-    expect(screen.getByText(/DOCUMENT CENTER/i)).toBeInTheDocument();
-
-    // Section 10: Customer Information
-    expect(screen.getByText(/CUSTOMER INFORMATION/i)).toBeInTheDocument();
+    // Section 9: CUSTOMER INFORMATION
+    const s9 = screen.getByRole('heading', { name: /CUSTOMER INFORMATION/i });
+    expect(s9).toBeInTheDocument();
     expect(screen.getAllByText('Rahul Sharma').length).toBeGreaterThan(0);
     expect(screen.getByText('Devendra Sharma')).toBeInTheDocument();
+    expect(screen.getAllByText(/\+91\s*9876543210/i).length).toBeGreaterThan(0);
 
-    // Section 11: Bank Account Details
-    expect(screen.getByText(/BANK ACCOUNT DETAILS/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/HDFC Bank/i).length).toBeGreaterThan(0);
+    // Section 10: NOTIFICATIONS & IMPORTANT NOTICES
+    const s10 = screen.getByRole('heading', { name: /NOTIFICATIONS & IMPORTANT NOTICES/i });
+    expect(s10).toBeInTheDocument();
+    expect(screen.getAllByText(/IMPORTANT UPDATE/i).length).toBeGreaterThan(0);
 
-    // Section 12: Borrower Support
-    expect(screen.getAllByText(/BORROWER SUPPORT/i).length).toBeGreaterThan(0);
+    // Section 11: BORROWER SUPPORT
+    const s11 = screen.getByRole('heading', { name: /BORROWER SUPPORT/i });
+    expect(s11).toBeInTheDocument();
+    expect(screen.getByText('support@loanapprove.in')).toBeInTheDocument();
+
+    // Validate strict 11-section sequential DOM order
+    const orderedSections = [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11];
+    for (let i = 0; i < orderedSections.length - 1; i++) {
+      const isFollowing = (orderedSections[i].compareDocumentPosition(orderedSections[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      expect(isFollowing).toBe(true);
+    }
+
+    // STRICT REQUIREMENT: Bank Account Details section and bank fields MUST be completely removed
+    expect(screen.queryByText(/BANK ACCOUNT DETAILS/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/50100492837192/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/HDFC0001234/i)).not.toBeInTheDocument();
   });
 
   const setupMock = (overrides?: { dashboard?: any; documents?: any; profile?: any }) => {
@@ -433,5 +473,56 @@ describe('Customer Portal Redesign & Loan Flow Synchronization Suite', () => {
       expect(screen.getAllByText(/Fee Settlements & Tax Invoices/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/Assigned Application Charges/i).length).toBeGreaterThan(0);
     });
+  });
+
+  it('TEST 8: Invoice preview and download actions are accessible from Payments & Invoices', async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BrandingProvider>
+          <MemoryRouter>
+            <CustomerHome />
+          </MemoryRouter>
+        </BrandingProvider>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /PAYMENTS & INVOICES/i })).toBeInTheDocument();
+    });
+
+    const viewInvoiceBtns = screen.getAllByRole('button', { name: /View Invoice/i });
+    expect(viewInvoiceBtns.length).toBeGreaterThan(0);
+    fireEvent.click(viewInvoiceBtns[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Official immutable tax invoice/i)).toBeInTheDocument();
+    });
+  });
+
+  it('TEST 9: Payment flow integration preserves payment options navigation without premature UTR', async () => {
+    setupMock({
+      dashboard: mockDashboardData,
+      documents: mockDocsData,
+      profile: mockCustomerProfile,
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BrandingProvider>
+          <MemoryRouter>
+            <CustomerHome />
+          </MemoryRouter>
+        </BrandingProvider>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /CHARGES & FEES/i })).toBeInTheDocument();
+    });
+
+    const payNowBtns = screen.getAllByRole('button', { name: /Pay Now/i });
+    expect(payNowBtns.length).toBeGreaterThan(0);
+    // Verified: clicking Pay Now does not open premature UTR field on CustomerHome
+    expect(screen.queryByPlaceholderText(/Enter 12-digit UTR/i)).not.toBeInTheDocument();
   });
 });
