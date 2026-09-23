@@ -105,9 +105,12 @@ export const CustomerLoanDetailPage: React.FC = () => {
 
   const rawData = response?.data;
   const app: CustomerLoanApplication | undefined =
-    rawData && 'applicationNumber' in (rawData as unknown as Record<string, unknown>)
+    (rawData && 'applicationNumber' in (rawData as unknown as Record<string, unknown>)
       ? (rawData as unknown as CustomerLoanApplication)
-      : (rawData as { data?: CustomerLoanApplication })?.data;
+      : (rawData as { data?: CustomerLoanApplication })?.data) ||
+    (response && 'applicationNumber' in (response as unknown as Record<string, unknown>)
+      ? (response as unknown as CustomerLoanApplication)
+      : (response as any)?.application || (response as any)?.data);
 
   if (isLoading) {
     return (

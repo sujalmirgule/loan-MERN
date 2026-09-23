@@ -115,10 +115,17 @@ export const AdminLoanDetailPage: React.FC = () => {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['adminLoanDetail', id] });
     queryClient.invalidateQueries({ queryKey: ['adminLoanApplications'] });
+    queryClient.invalidateQueries({ queryKey: ['adminLoanApprovalOps'] });
     queryClient.invalidateQueries({ queryKey: ['adminPendingLoans'] });
     queryClient.invalidateQueries({ queryKey: ['adminLoanPayments', id] });
     queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
     queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+    queryClient.invalidateQueries({ queryKey: ['customer-dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['customerLoans'] });
+    queryClient.invalidateQueries({ queryKey: ['customerLoanDetail'] });
+    queryClient.invalidateQueries({ queryKey: ['customer-invoices'] });
+    queryClient.invalidateQueries({ queryKey: ['customerChargesList'] });
+    queryClient.invalidateQueries({ queryKey: ['customerDocs'] });
   };
 
   // Initialize approval values when opening approval dialog

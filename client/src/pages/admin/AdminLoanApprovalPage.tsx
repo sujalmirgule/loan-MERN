@@ -220,14 +220,24 @@ export const AdminLoanApprovalPage: React.FC = () => {
     refetchInterval: 1500,
   });
 
-  const rawList = responseData?.data || [];
-  const loans: any[] = Array.isArray(rawList) ? rawList : [];
-  const pagination = responseData?.pagination || {
-    page: 1,
-    pageSize,
-    total: loans.length,
-    totalPages: 1,
-  };
+  const rawList = responseData?.data;
+  const loans: any[] =
+    (Array.isArray(rawList) ? rawList : null) ||
+    (Array.isArray((rawList as any)?.applications) ? (rawList as any).applications : null) ||
+    (Array.isArray((rawList as any)?.data) ? (rawList as any).data : null) ||
+    (Array.isArray((responseData as any)?.applications) ? (responseData as any).applications : null) ||
+    (Array.isArray((responseData as any)?.data) ? (responseData as any).data : null) ||
+    (Array.isArray(responseData) ? responseData : null) ||
+    [];
+  const pagination =
+    responseData?.pagination ||
+    (rawList as any)?.pagination ||
+    (responseData as any)?.data?.pagination || {
+      page: 1,
+      pageSize,
+      total: loans.length,
+      totalPages: Math.max(1, Math.ceil(loans.length / pageSize)),
+    };
 
   // Selection helpers
   const isAllSelected = loans.length > 0 && loans.every((loan) => selectedIds.includes(loan.id));

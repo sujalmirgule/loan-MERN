@@ -15,7 +15,6 @@ import {
 import {
   loanApi,
   AdminLoanApplicationListItem,
-  PaginatedAdminLoansResponse,
   BulkWhatsAppResponse,
   BulkEmailResponse,
 } from '@/api/loanApi';
@@ -130,27 +129,34 @@ export const AdminLoansPage: React.FC = () => {
   });
 
   const rawData = response?.data;
-  const applications: AdminLoanApplicationListItem[] = Array.isArray(rawData)
-    ? rawData
-    : Array.isArray((rawData as unknown as { data?: AdminLoanApplicationListItem[] })?.data)
-    ? (rawData as unknown as { data: AdminLoanApplicationListItem[] }).data
-    : [];
+  const applications: AdminLoanApplicationListItem[] =
+    (Array.isArray(rawData) ? rawData : null) ||
+    (Array.isArray((rawData as any)?.applications) ? (rawData as any).applications : null) ||
+    (Array.isArray((rawData as any)?.data) ? (rawData as any).data : null) ||
+    (Array.isArray((response as any)?.applications) ? (response as any).applications : null) ||
+    (Array.isArray((response as any)?.data) ? (response as any).data : null) ||
+    (Array.isArray(response) ? (response as any) : null) ||
+    [];
 
   const pagination =
     response?.pagination ||
-    (rawData as unknown as PaginatedAdminLoansResponse)?.pagination || {
+    (rawData as any)?.pagination ||
+    (response as any)?.data?.pagination || {
       page: 1,
       pageSize: 10,
       total: applications.length,
-      totalPages: 1,
+      totalPages: Math.max(1, Math.ceil(applications.length / pageSize)),
     };
 
-  const counts = response?.counts || {
-    all: pagination.total,
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-  };
+  const counts =
+    response?.counts ||
+    (rawData as any)?.counts ||
+    (response as any)?.data?.counts || {
+      all: pagination.total || applications.length,
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+    };
 
   const handleStatusTabChange = (newStatus: string) => {
     setStatus(newStatus);
