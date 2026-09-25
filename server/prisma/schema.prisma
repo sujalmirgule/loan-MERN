@@ -2,7 +2,7 @@
 // Database: SQLite with WAL mode enabled
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -19,7 +19,7 @@ model AdminUser {
   passwordHash String
   fullName     String
   role         String    @default("STAFF") // SUPER_ADMIN, ADMIN, STAFF
-  permissions  String    @default("[]") // JSON string array of granted permission keys
+  permissions  String?   @db.Text // JSON string array of granted permission keys
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
@@ -40,7 +40,7 @@ model Customer {
   fatherName      String?
   gender          String?
   dob             String?
-  address         String
+  address         String    @db.Text
   state           String
   city            String
   pincode         String?
@@ -121,14 +121,14 @@ model LoanApplication {
   disbursementDate     DateTime?
   nextEmiDate          DateTime?
   
-  purpose              String?
+  purpose              String?   @db.Text
   status               String    @default("SUBMITTED") 
   // DRAFT, SUBMITTED, UNDER_REVIEW, DOCUMENTS_REQUIRED, ON_HOLD, APPROVED, 
   // REJECTED, OFFER_PENDING_CUSTOMER, OFFER_ACCEPTED, OFFER_REJECTED
 
-  rejectionReason      String?
-  holdReason           String?
-  docRequestReason     String?
+  rejectionReason      String?   @db.Text
+  holdReason           String?   @db.Text
+  docRequestReason     String?   @db.Text
   modifiedOfferAccepted Boolean?
   paymentStatus        String    @default("NOT_REQUIRED") // NOT_REQUIRED, PAYMENT_REQUIRED, UNDER_VERIFICATION, PAID
   
@@ -176,12 +176,12 @@ model LoanDocument {
   fileName         String           // Display filename
   originalFileName String           @default("")
   storageKey       String           @default("")
-  filePath         String
-  fileUrl          String
+  filePath         String           @db.Text
+  fileUrl          String           @db.Text
   mimeType         String
   fileSize         Int
   status           String           @default("PENDING") // PENDING, UNDER_REVIEW, APPROVED, REJECTED, REUPLOAD_REQUIRED
-  rejectionReason  String?
+  rejectionReason  String?          @db.Text
   version          Int              @default(1)
   isCurrentVersion Boolean          @default(true)
   reviewedBy       String?
@@ -208,7 +208,7 @@ model DocumentRequest {
   loan         LoanApplication? @relation(fields: [loanId], references: [id], onDelete: SetNull)
   documentType String           // e.g. OTHER, BANK_STATEMENT, etc.
   title        String
-  description  String?
+  description  String?          @db.Text
   status       String           @default("PENDING") // PENDING, FULFILLED, CANCELLED
   requestedBy  String?
   createdAt    DateTime         @default(now())
@@ -230,7 +230,7 @@ model LoanAgreement {
   customer             Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   
   agreementVersion     String          @default("v1.0")
-  agreementContentHtml String
+  agreementContentHtml String          @db.LongText
   ipAddress            String?
   userAgent            String?
   acceptanceStatus     String          @default("PENDING") // PENDING, ACCEPTED
@@ -255,7 +255,7 @@ model Disbursement {
   method            String          // BANK_TRANSFER, UPI
   referenceId       String          // UTR or Transaction Ref
   status            String          @default("COMPLETED") // PENDING, COMPLETED, FAILED
-  notes             String?
+  notes             String?         @db.Text
   disbursedAt       DateTime        @default(now())
   
   createdByAdminId  String?
@@ -313,8 +313,8 @@ model Payment {
   status         String          @default("SUCCESS") // PENDING, UNDER_VERIFICATION, SUCCESS, PAID, FAILED, REJECTED
   verifiedBy     String?
   verifiedAt     DateTime?
-  rejectionReason String?
-  notes          String?
+  rejectionReason String?        @db.Text
+  notes          String?         @db.Text
   chargeId       String?
   upiVpa         String?
   submittedAt    DateTime?
@@ -337,7 +337,7 @@ model Notification {
   customer      Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
   
   title         String
-  message       String
+  message       String    @db.Text
   eventType     String    // REGISTRATION, LOAN_STATUS, EMI_REMINDER, etc.
   isRead        Boolean   @default(false)
   createdAt     DateTime  @default(now())
@@ -358,8 +358,8 @@ model AuditLog {
   action        String    // APPROVE_LOAN, MODIFY_AMOUNT, DISBURSE, CUSTOMER_ACCOUNT_DEACTIVATED, etc.
   entity        String    // LoanApplication, Customer, Document, etc.
   entityId      String
-  previousValue String?   // JSON stringified before state
-  newValue      String?   // JSON stringified after state
+  previousValue String?   @db.LongText   // JSON stringified before state
+  newValue      String?   @db.LongText   // JSON stringified after state
   ipAddress     String?
   timestamp     DateTime  @default(now())
   createdAt     DateTime  @default(now())
@@ -379,26 +379,26 @@ model BrandingSettings {
   id              String   @id @default("default")
   companyName     String   @default("Loan Approve Financial Services")
   appName         String   @default("Loan Approve")
-  logoUrl         String?
-  faviconUrl      String?
+  logoUrl         String?  @db.LongText
+  faviconUrl      String?  @db.LongText
   primaryColor    String   @default("#047857")
   secondaryColor  String   @default("#0f172a")
   email           String   @default("support@loanapprove.com")
   phone           String   @default("+91 98765 43210")
-  address         String   @default("Nariman Point, Mumbai, Maharashtra 400021")
+  address         String?  @db.Text
   website         String   @default("https://loanapprove.com")
   termsUrl        String   @default("https://loanapprove.com/terms")
   privacyUrl      String   @default("https://loanapprove.com/privacy")
   companyLegalName String   @default("Loan Approve Financial Services Pvt. Ltd.")
   authorizedSignatoryName String @default("Authorized Underwriting Officer")
   authorizedSignatoryDesignation String @default("Credit & Sanction Division")
-  authorizedSignatureUrl String?
-  companyStampUrl String?
+  authorizedSignatureUrl String? @db.LongText
+  companyStampUrl String? @db.LongText
 
   // ── Document & PDF Branding (Approval Letter & Invoice) ───────
-  approvalLetterHeaderUrl   String?  // Complete 1024x232 banner artwork for top of Approval Letter
-  secondaryLogoUrl          String?  // Secondary PNG / side scheme logo
-  watermarkLogoUrl          String?  // Background watermark logo (300x300 emblem)
+  approvalLetterHeaderUrl   String?  @db.LongText // Complete 1024x232 banner artwork for top of Approval Letter
+  secondaryLogoUrl          String?  @db.LongText // Secondary PNG / side scheme logo
+  watermarkLogoUrl          String?  @db.LongText // Background watermark logo (300x300 emblem)
   documentWatermarkEnabled  Boolean  @default(true) // Watermark ON/OFF for Approval Letter
   invoiceWatermarkEnabled   Boolean  @default(true) // Watermark ON/OFF for Tax Invoices
   watermarkOpacity          Float    @default(0.10) // Range: 0.05 - 0.30 (default 10%)
@@ -411,7 +411,7 @@ model BrandingSettings {
   lenderLegalName           String?
   lenderRegistrationNumber  String?  // e.g. NBFC registration — only if verified
   lenderType                String?  // e.g. "NBFC", "Bank", "MFI"
-  lenderAddress             String?
+  lenderAddress             String?  @db.Text
   lenderWebsite             String?
   isDirectLender            Boolean  @default(false)
   partnerName               String?
@@ -424,34 +424,34 @@ model BrandingSettings {
   maxTenureMonths           Int      @default(84)
   minApr                    Float    @default(12.0)
   maxApr                    Float    @default(36.0)
-  processingFeePolicy       String   @default("Processing fee applicable as per loan terms. GST as per applicable rates.")
-  otherChargesPolicy        String   @default("Late payment charges, prepayment charges, and other fees as per the approved loan agreement.")
+  processingFeePolicy       String?  @db.Text
+  otherChargesPolicy        String?  @db.Text
 
   // Eligibility Configuration
   minAge                    Int      @default(18)
   maxAge                    Int      @default(60)
   minMonthlyIncome          Float    @default(15000)
-  creditScoreCriteria       String   @default("Good credit history preferred. Applications assessed individually.")
+  creditScoreCriteria       String?  @db.Text
   bankAccountRequired       Boolean  @default(true)
-  employmentCriteria        String   @default("Salaried, Self-Employed, or Business Owner")
-  residentialStatusCriteria String   @default("Indian Resident with valid address proof")
+  employmentCriteria        String?  @db.Text
+  residentialStatusCriteria String?  @db.Text
 
   // Document Checklist (JSON array of {id, name, description, icon, enabled, mandatory})
-  documentsConfigJson       String   @default("[]")
+  documentsConfigJson       String?  @db.LongText
 
   // Disclaimer & Legal (Page 5 from PDF)
-  disclaimerText            String?
+  disclaimerText            String?  @db.Text
 
   // FAQs (JSON array of {question, answer})
-  faqsJson                  String   @default("[]")
+  faqsJson                  String?  @db.LongText
 
   // Mobile App CTA
   appEnabled                Boolean  @default(false)
   appDownloadUrl            String?
 
   // Hero Content
-  heroHeadline              String   @default("Simple, Transparent Loan Application")
-  heroSubheadline           String   @default("Apply online, complete verification, and track your application status — all in one place.")
+  heroHeadline              String?  @db.Text
+  heroSubheadline           String?  @db.Text
 
   updatedAt       DateTime @updatedAt
 }
@@ -464,9 +464,9 @@ model SupportTicket {
   customerId  String
   customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   subject     String
-  message     String
+  message     String    @db.Text
   status      String    @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED
-  adminReply  String?
+  adminReply  String?   @db.Text
   createdAt   DateTime  @default(now())
   resolvedAt  DateTime?
   emailMessages EmailMessage[]
@@ -491,7 +491,7 @@ model EmailSettings {
   enabled         Boolean   @default(true)
   status          String    @default("NOT_CONFIGURED") // NOT_CONFIGURED, CONFIGURED, CONNECTED, CONNECTION_FAILED
   lastTestedAt    DateTime?
-  lastError       String?
+  lastError       String?   @db.Text
   updatedAt       DateTime  @updatedAt
 }
 
@@ -514,7 +514,7 @@ model WhatsAppSettings {
   enabled           Boolean   @default(false)
   status            String    @default("NOT_CONFIGURED") // NOT_CONFIGURED, CONFIGURED, CONNECTED, CONNECTION_FAILED
   lastTestedAt      DateTime?
-  lastError         String?
+  lastError         String?   @db.Text
   updatedAt         DateTime  @updatedAt
 }
 
@@ -529,7 +529,7 @@ model PaymentConfig {
   accountNumber     String   @default("9876543210123")
   ifscCode          String   @default("HDFC0001234")
   accountHolderName String   @default("Loan Approve Financial Services")
-  instructions      String   @default("Please transfer the processing fee using UPI or IMPS and enter the 12-digit UTR number below.")
+  instructions      String?  @db.Text
   defaultInterestRate Float  @default(12.0)
   kycChargeAmount     Float  @default(499)
   processingFeeAmount Float  @default(1999)
@@ -546,7 +546,7 @@ model Domain {
   domainName      String            @unique
   helplineNumber  String?           @default("+91 8042054797")
   contactEmail    String?           @default("contact@loanapprove.com")
-  description     String?
+  description     String?           @db.Text
   isActive        Boolean           @default(true)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
@@ -565,7 +565,7 @@ model PaymentLink {
   id          String   @id @default(uuid())
   title       String
   url         String
-  description String?
+  description String?  @db.Text
   status      String   @default("ACTIVE") // ACTIVE, INACTIVE
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -589,7 +589,7 @@ model Charge {
   loanId      String?
   loan        LoanApplication? @relation(fields: [loanId], references: [id], onDelete: Cascade)
   status      String           @default("PENDING") // PENDING, PAID, FAILED, CANCELLED
-  remark      String?
+  remark      String?          @db.Text
   dueDate     DateTime?
   createdBy   String?
   paidAt      DateTime?
@@ -668,13 +668,13 @@ model WhatsAppMessage {
   loan              LoanApplication? @relation(fields: [loanId], references: [id], onDelete: SetNull)
   adminId           String?
   phone             String
-  message           String
+  message           String           @db.Text
   templateName      String?
   providerMessageId String?
   status            String           @default("SENT") // SENT, DELIVERED, FAILED
   sentAt            DateTime?        @default(now())
   failedAt          DateTime?
-  failureReason     String?
+  failureReason     String?          @db.Text
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -698,13 +698,13 @@ model EmailMessage {
   adminId           String?
   recipientEmail    String
   subject           String
-  message           String
+  message           String           @db.Text
   templateName      String?
   status            String           @default("SENT") // SENT, FAILED, PENDING
   providerMessageId String?
   sentAt            DateTime?        @default(now())
   failedAt          DateTime?
-  failureReason     String?
+  failureReason     String?          @db.Text
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -755,8 +755,8 @@ model Invoice {
   currency           String           @default("INR")
   status             String           @default("PAID") // PAID, ISSUED, VOID
   storageKey         String
-  filePath           String
-  fileUrl            String
+  filePath           String           @db.Text
+  fileUrl            String           @db.Text
   templateVersion    String           @default("v1.0")
   brandingVersion    String           @default("v1.0")
   issuedAt           DateTime         @default(now())

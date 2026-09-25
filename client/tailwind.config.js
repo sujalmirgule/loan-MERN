@@ -29,6 +29,7 @@ export default {
         success: 'var(--success)',
         warning: 'var(--warning)',
         danger: 'var(--danger)',
+        info: 'var(--info)',
         border: 'var(--border)',
         input: 'var(--input)',
         'input-border': 'var(--input-border)',
@@ -40,10 +41,34 @@ export default {
           secondary: 'var(--text-secondary)',
           muted: 'var(--text-muted)',
         },
+        navy: {
+          DEFAULT: '#07152F',
+          primary: '#07152F',
+          secondary: '#0B2147',
+          deep: '#123B8E',
+          surface: '#0B2147',
+          border: '#1E3A6B',
+        },
+        brand: {
+          blue: '#155EEF',
+          accent: '#3B82F6',
+          light: '#E8F1FF',
+          bg: '#F4F8FF',
+          border: '#D7E3F5',
+        },
+        gold: {
+          primary: 'var(--gold-primary, #C9A227)',
+          bright: 'var(--gold-bright, #D4AF37)',
+          muted: 'var(--gold-muted, #A88932)',
+          soft: 'var(--gold-soft, #E0C766)',
+          bg: 'var(--gold-bg, #FEF9E7)',
+          border: 'var(--gold-border, #E6CF7A)',
+        },
         /* Legacy mappings for shadcn compatibility */
         card: {
           DEFAULT: 'var(--card)',
           foreground: 'var(--card-foreground)',
+          elevated: 'var(--card-elevated, #222222)',
         },
         popover: {
           DEFAULT: 'var(--popover)',

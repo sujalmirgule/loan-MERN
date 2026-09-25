@@ -45,6 +45,7 @@ import { AdminDocumentsPage } from '@/pages/admin/AdminDocumentsPage';
 import { AdminKycList } from '@/pages/admin/AdminKycList';
 import { AdminKycDetail } from '@/pages/admin/AdminKycDetail';
 import { AdminPaymentsPage } from '@/pages/admin/AdminPaymentsPage';
+import { AdminChargesApprovalPage } from '@/pages/admin/AdminChargesApprovalPage';
 import { AdminDisbursementsPage } from '@/pages/admin/AdminDisbursementsPage';
 import { AdminReportsPage } from '@/pages/admin/AdminReportsPage';
 import { AdminAuditLogsPage } from '@/pages/admin/AdminAuditLogsPage';
@@ -135,6 +136,7 @@ export function App() {
                   <Route path="applications" element={<CustomerLoansPage />} />
                   <Route path="applications/:id" element={<CustomerLoanDetailPage />} />
                   <Route path="apply" element={<ApplyLoanPage />} />
+                  <Route path="payment" element={<CustomerPaymentPage />} />
                   <Route path="payments" element={<CustomerPaymentPage />} />
                   <Route path="payments/:loanId" element={<CustomerPaymentPage />} />
                   <Route path="payment/:loanId" element={<CustomerPaymentPage />} />
@@ -203,6 +205,12 @@ export function App() {
                   <Route element={<AdminPermissionRoute permission="payments.view" />}>
                     <Route path="payments" element={<AdminPaymentsPage />} />
                     <Route path="disbursements" element={<AdminDisbursementsPage />} />
+                  </Route>
+
+                  {/* Charges & Fee Approval */}
+                  <Route element={<AdminPermissionRoute permission={['charges.view', 'payments.view']} />}>
+                    <Route path="charges-approval" element={<AdminChargesApprovalPage />} />
+                    <Route path="payments/charges-approval" element={<AdminChargesApprovalPage />} />
                   </Route>
 
                   {/* Reporting & Audit */}

@@ -150,9 +150,11 @@ async function main() {
   });
 
   // ============================================================
-  // 9. DEMO CUSTOMERS — 20+ across all states, types, statuses
-  // Dates: Sep 1–19 2026
+  // 9. DEMO CUSTOMERS (Conditioned on SEED_DEMO_DATA=true)
+  // Production default: Skip fake customers, loans & payments.
   // ============================================================
+  if (process.env.SEED_DEMO_DATA === 'true') {
+    console.log('🌱 SEED_DEMO_DATA=true detected: Seeding demo customers and loan records...');
 
   // --- CUSTOMER 1: Ajay Kumar (primary demo customer) ---
   const ajay = await prisma.customer.upsert({
@@ -1365,7 +1367,11 @@ async function main() {
     });
   }
 
-  console.log('✅ 26 demo customers seeded across all states, loan types, statuses, and dates Sep 1–19 2026!');
+    console.log('✅ Demo customers seeded successfully!');
+  } else {
+    console.log('🔒 Production mode: Skipping demo customers, loans, payments, and financial records.');
+  }
+
   console.log('🎉 Seeding complete!');
 }
 

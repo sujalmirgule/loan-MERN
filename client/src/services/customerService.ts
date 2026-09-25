@@ -19,9 +19,9 @@ export const customerService = {
   },
 
   getDashboard: async () => {
-    const res = await apiClient<{ success: boolean; data: any }>(API_ENDPOINTS.DASHBOARD.CUSTOMER, {
+    const res = await apiClient<any>(API_ENDPOINTS.DASHBOARD.CUSTOMER, {
       tokenType: 'customer',
     });
-    return res.data;
+    return res?.data ?? res;
   },
 };

@@ -402,6 +402,66 @@ export class SpecificChargesController {
       next(err);
     }
   }
+
+  /**
+   * DELETE /api/admin/charges/specific/:chargeId
+   */
+  async deleteCharge(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+
+      const chargeId = String(req.params.chargeId);
+      await specificChargesService.deleteCharge(chargeId, req.user, req.ip);
+
+      res.json({
+        success: true,
+        message: 'Charge deleted successfully.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/admin/charges/specific/bulk-cancel
+   */
+  async bulkCancelCharges(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+
+      const { chargeIds } = req.body;
+      const result = await specificChargesService.bulkCancelCharges(chargeIds, req.user, req.ip);
+
+      res.json({
+        success: true,
+        message: `Successfully cancelled ${result.cancelledCount} charges.`,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/admin/charges/specific/bulk-delete
+   */
+  async bulkDeleteCharges(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+
+      const { chargeIds } = req.body;
+      const result = await specificChargesService.bulkDeleteCharges(chargeIds, req.user, req.ip);
+
+      res.json({
+        success: true,
+        message: `Bulk delete completed: ${result.deletedCount} deleted, ${result.cancelledCount} cancelled due to active status.`,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const specificChargesController = new SpecificChargesController();
+

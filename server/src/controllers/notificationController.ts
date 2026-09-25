@@ -65,6 +65,47 @@ export class NotificationController {
       next(err);
     }
   }
+
+  /**
+   * Admin: Mark all admin notifications read.
+   */
+  async markAllAdminNotificationsRead(req: Request, res: Response, next: NextFunction) {
+    try {
+      await notificationService.markAllAdminNotificationsRead();
+      res.status(200).json({ success: true, message: 'All admin notifications marked as read.' });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Delete single notification.
+   */
+  async deleteAdminNotification(req: Request, res: Response, next: NextFunction) {
+    try {
+      await notificationService.deleteAdminNotification(req.params.id as string);
+      res.status(200).json({ success: true, message: 'Notification deleted successfully.' });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Bulk delete notifications.
+   */
+  async bulkDeleteAdminNotifications(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        throw new AppError(400, 'ids array is required');
+      }
+      const count = await notificationService.bulkDeleteAdminNotifications(ids);
+      res.status(200).json({ success: true, message: `Successfully deleted ${count} notification(s).`, count });
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const notificationController = new NotificationController();
+

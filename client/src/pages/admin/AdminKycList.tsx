@@ -515,25 +515,25 @@ export const AdminKycList: React.FC = () => {
       )}
 
       {/* Filter Tabs */}
-      <Card className="bg-white border border-[#D6E4F5] rounded-2xl shadow-sm">
+      <Card className="bg-surface border border-border rounded-2xl shadow-sm">
         <CardContent className="p-4 space-y-4">
-          <div className="flex flex-wrap gap-2 border-b border-[#D6E4F5] pb-3">
+          <div className="flex flex-wrap gap-2 border-b border-border pb-3">
             {tabs.map((tab) => (
               <button
                 key={tab.value}
                 onClick={() => setActiveTab(tab.value)}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 ${
                   activeTab === tab.value
-                    ? 'bg-[#2563EB] text-white shadow-sm'
-                    : 'bg-[#F7FAFF] border border-[#D6E4F5] text-[#64748B] hover:text-[#2563EB] hover:bg-[#EFF6FF]'
+                    ? 'bg-[#D4AF37] text-black shadow-sm font-bold'
+                    : 'bg-surface-elevated border border-border text-text-secondary hover:text-text-primary hover:bg-[#222222]'
                 }`}
               >
                 <span>{tab.label}</span>
                 <span
                   className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
                     activeTab === tab.value
-                      ? 'bg-white text-[#2563EB]'
-                      : 'bg-blue-100 text-blue-800'
+                      ? 'bg-black text-[#D4AF37]'
+                      : 'bg-surface text-text-secondary border border-border'
                   }`}
                 >
                   {tab.count}
@@ -547,15 +547,15 @@ export const AdminKycList: React.FC = () => {
             <div className="md:col-span-2">
               <form onSubmit={handleSearchSubmit} className="flex gap-2">
                 <div className="relative flex-1">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
                   <Input
                     placeholder="Search by customer name, mobile, email, or application ID..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 bg-[#F7FAFF] border border-[#D6E4F5] rounded-lg text-xs text-[#0F172A] placeholder-[#64748B]/60 focus:outline-none focus:border-[#2563EB] focus:bg-white"
+                    className="w-full pl-9 pr-3 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-text-primary placeholder-[#737373] focus:outline-none focus:border-[#D4AF37] focus:bg-surface-elevated"
                   />
                 </div>
-                <Button type="submit" size="sm" className="px-3.5 h-9 text-xs bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium shadow-sm">
+                <Button type="submit" size="sm" className="px-3.5 h-9 text-xs bg-[#D4AF37] hover:bg-[#C9A227] text-black font-bold shadow-sm">
                   <Filter className="w-3.5 h-3.5 mr-1" />
                   Filter
                 </Button>
@@ -566,7 +566,7 @@ export const AdminKycList: React.FC = () => {
               <select
                 value={stateFilter}
                 onChange={(e) => setStateFilter(e.target.value)}
-                className="w-full text-xs h-9 rounded-lg border border-[#D6E4F5] bg-[#F7FAFF] text-[#0F172A] px-2.5 py-1.5 focus:outline-none focus:border-[#2563EB] focus:bg-white font-medium"
+                className="w-full text-xs h-9 rounded-lg border border-border bg-surface-elevated text-text-primary px-2.5 py-1.5 focus:outline-none focus:border-[#D4AF37] font-medium"
               >
                 <option value="">All States</option>
                 {statesList.map((st) => (
@@ -579,7 +579,7 @@ export const AdminKycList: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={handleResetFilters}
-                className="h-9 px-3 bg-[#F7FAFF] border border-[#D6E4F5] text-[#64748B] hover:text-[#0F172A] hover:bg-[#EFF6FF] text-xs"
+                className="h-9 px-3 bg-surface-elevated border border-border text-text-secondary hover:text-text-primary hover:bg-[#222222] text-xs"
               >
                 Reset
               </Button>
@@ -590,19 +590,19 @@ export const AdminKycList: React.FC = () => {
 
       {/* Customer KYC Table */}
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center min-h-[300px] space-y-3 bg-white rounded-2xl border border-[#D6E4F5] p-12">
-          <Loader2 className="w-8 h-8 animate-spin text-[#2563EB]" />
-          <p className="text-xs text-[#64748B] font-medium">Loading KYC compliance queue...</p>
+        <div className="flex flex-col items-center justify-center min-h-[300px] space-y-3 bg-surface rounded-2xl border border-border p-12">
+          <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
+          <p className="text-xs text-text-secondary font-medium">Loading KYC compliance queue...</p>
         </div>
       ) : filteredCustomers.length === 0 ? (
-        <Card className="bg-white border border-[#D6E4F5] text-center py-10 shadow-sm rounded-2xl">
+        <Card className="bg-surface border border-border text-center py-10 shadow-sm rounded-2xl">
           <CardContent className="space-y-3 max-w-sm mx-auto">
-            <div className="w-12 h-12 rounded-2xl bg-[#EFF6FF] border border-[#D6E4F5] text-[#2563EB] flex items-center justify-center mx-auto shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-surface-elevated border border-border text-[#D4AF37] flex items-center justify-center mx-auto shadow-sm">
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[#0F172A]">No KYC Records in Queue</h3>
-              <p className="text-xs text-[#64748B] mt-0.5">
+              <h3 className="text-sm font-bold text-text-primary">No KYC Records in Queue</h3>
+              <p className="text-xs text-text-secondary mt-0.5">
                 No customer verification requests match your selected filters or search query.
               </p>
             </div>
@@ -610,17 +610,17 @@ export const AdminKycList: React.FC = () => {
               variant="outline"
               size="sm"
               onClick={handleResetFilters}
-              className="text-xs bg-[#F7FAFF] border-[#D6E4F5] text-[#2563EB] hover:bg-[#EFF6FF] font-medium"
+              className="text-xs bg-surface-elevated border-border text-text-primary hover:bg-[#222222] font-medium"
             >
               Reset Filters
             </Button>
           </CardContent>
         </Card>
       ) : (
-        <Card className="bg-white border border-[#D6E4F5] rounded-2xl shadow-sm overflow-hidden">
+        <Card className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-[#64748B]">
-              <thead className="bg-[#EFF6FF] border-b border-[#D6E4F5] text-[10px] font-bold text-[#0F172A] uppercase tracking-wider">
+            <table className="w-full text-left text-xs text-text-secondary">
+              <thead className="bg-surface-elevated border-b border-border text-[10px] font-bold text-text-secondary uppercase tracking-wider">
                 <tr>
                   <th className="px-4 py-3.5">Customer</th>
                   <th className="px-4 py-3.5">Application ID</th>
@@ -634,13 +634,13 @@ export const AdminKycList: React.FC = () => {
                   <th className="px-4 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#D6E4F5] bg-white">
+              <tbody className="divide-y divide-border bg-surface">
                 {filteredCustomers.map((c) => (
-                  <tr key={c.id} className="hover:bg-[#EFF6FF]/50 transition-colors">
+                  <tr key={c.id} className="hover:bg-surface-elevated/60 transition-colors">
                     {/* Customer */}
                     <td className="px-4 py-3.5">
-                      <div className="font-bold text-[#0F172A]">{c.fullName}</div>
-                      <div className="text-[11px] text-[#64748B] truncate max-w-[170px]">{c.email}</div>
+                      <div className="font-bold text-text-primary">{c.fullName}</div>
+                      <div className="text-[11px] text-text-secondary truncate max-w-[170px]">{c.email}</div>
                     </td>
 
                     {/* Application ID */}
@@ -648,7 +648,7 @@ export const AdminKycList: React.FC = () => {
                       {c.loanId ? (
                         <Link
                           to={`/admin/loans/${c.loanId}`}
-                          className="font-mono text-xs font-bold text-primary hover:text-[#8880ff] hover:underline"
+                          className="font-mono text-xs font-bold text-primary hover:text-[#E0C766] hover:underline"
                         >
                           {c.applicationId}
                         </Link>
@@ -676,30 +676,30 @@ export const AdminKycList: React.FC = () => {
                     <td className="px-4 py-3.5 text-center">
                       {c.isKycFeePaid ? (
                         <div className="flex flex-col items-center gap-0.5">
-                          <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold">
+                          <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[11px] font-bold">
                             ✓ Payment Verified
                           </Badge>
                           {c.utr && (
-                            <span className="font-mono text-[11px] font-bold text-[#0F172A] select-all">
+                            <span className="font-mono text-[11px] font-bold text-white select-all">
                               UTR: {c.utr}
                             </span>
                           )}
                         </div>
                       ) : c.hasUtr ? (
                         <div className="flex flex-col items-center gap-0.5">
-                          <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
+                          <Badge className="bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30 text-[11px] font-bold">
                             ✓ UTR Submitted
                           </Badge>
-                          <span className="font-mono text-[11px] font-bold text-[#0F172A] select-all" title={c.utr || ''}>
+                          <span className="font-mono text-[11px] font-bold text-white select-all" title={c.utr || ''}>
                             UTR: {c.utr}
                           </span>
                         </div>
                       ) : c.kycChargeStatus === 'PENDING' ? (
-                        <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold">
+                        <Badge className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[11px] font-bold">
                           ⚠ UTR Missing
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-[#64748B] border-[#D6E4F5] text-[11px] font-bold">
+                        <Badge variant="outline" className="text-text-secondary border-border text-[11px] font-bold">
                           ⏳ Payment Pending
                         </Badge>
                       )}

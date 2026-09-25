@@ -14,6 +14,7 @@ import {
   FileText,
   CreditCard,
   CheckCircle2,
+  ArrowRight,
 } from 'lucide-react';
 import { useBrandTitle } from '@/hooks/useBrandTitle';
 
@@ -122,8 +123,16 @@ export const CustomerNotificationsPage: React.FC = () => {
                 const title = (notif.title || '').toLowerCase();
                 const msg = (notif.message || '').toLowerCase();
                 const event = (notif.eventType || '').toUpperCase();
+                const text = `${title} ${msg}`;
+
                 if (event.includes('PAYMENT') || title.includes('fee') || title.includes('charge') || title.includes('payment') || msg.includes('utr')) {
-                  navigate('/customer/payments');
+                  let chargeParam = '';
+                  if (text.includes('stamp')) chargeParam = '?charge=stamp_duty';
+                  else if (text.includes('gst')) chargeParam = '?charge=gst';
+                  else if (text.includes('insurance')) chargeParam = '?charge=insurance';
+                  else if (text.includes('processing')) chargeParam = '?charge=processing_fee';
+                  else if (text.includes('late')) chargeParam = '?charge=late_payment';
+                  navigate(`/customer/payment${chargeParam}`);
                 } else if (event.includes('AGREEMENT') || title.includes('agreement') || msg.includes('agreement')) {
                   navigate('/customer/loans');
                 } else if (event.includes('KYC') || title.includes('kyc') || msg.includes('aadhaar')) {
@@ -150,17 +159,43 @@ export const CustomerNotificationsPage: React.FC = () => {
                     )}
                   </div>
                   <p className="text-xs text-slate-600 mt-1 leading-relaxed">{notif.message}</p>
-                  <div className="flex items-center space-x-1.5 text-[10px] text-text-secondary mt-2">
-                    <Clock className="w-3 h-3" />
-                    <span>
-                      {new Date(notif.createdAt).toLocaleDateString('en-IN', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
+                  <div className="flex items-center justify-between mt-3">
+                    <div className="flex items-center space-x-1.5 text-[10px] text-text-secondary">
+                      <Clock className="w-3 h-3" />
+                      <span>
+                        {new Date(notif.createdAt).toLocaleDateString('en-IN', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+
+                    {(notif.eventType.includes('PAYMENT') || notif.title.toLowerCase().includes('fee') || notif.title.toLowerCase().includes('charge') || notif.message.toLowerCase().includes('payment')) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!notif.isRead) markReadMutation.mutate(notif.id);
+                          const title = (notif.title || '').toLowerCase();
+                          const msg = (notif.message || '').toLowerCase();
+                          const text = `${title} ${msg}`;
+                          let chargeParam = '';
+                          if (text.includes('stamp')) chargeParam = '?charge=stamp_duty';
+                          else if (text.includes('gst')) chargeParam = '?charge=gst';
+                          else if (text.includes('insurance')) chargeParam = '?charge=insurance';
+                          else if (text.includes('processing')) chargeParam = '?charge=processing_fee';
+                          else if (text.includes('late')) chargeParam = '?charge=late_payment';
+                          navigate(`/customer/payment${chargeParam}`);
+                        }}
+                        className="text-[11px] font-bold text-[#155EEF] hover:underline flex items-center gap-1 cursor-pointer bg-transparent border-none p-0"
+                      >
+                        <span>View Payment</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </CardContent>

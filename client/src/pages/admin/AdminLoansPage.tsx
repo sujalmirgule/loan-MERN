@@ -16,7 +16,6 @@ import {
   loanApi,
   AdminLoanApplicationListItem,
   BulkWhatsAppResponse,
-  BulkEmailResponse,
 } from '@/api/loanApi';
 import { apiClient } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
@@ -42,7 +41,11 @@ import {
   Square,
   Users,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
+import { DataManagementModal, ManagementActionType } from '@/components/admin/DataManagementModal';
+import { BulkActionBar } from '@/components/admin/BulkActionBar';
+
 
 export const AdminLoansPage: React.FC = () => {
   const navigate = useNavigate();
@@ -81,8 +84,31 @@ export const AdminLoansPage: React.FC = () => {
   );
   const [bulkEmailTemplateName, setBulkEmailTemplateName] = useState('APPLICATION_STATUS_UPDATE');
   const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
-  const [bulkEmailCampaignResult, setBulkEmailCampaignResult] = useState<BulkEmailResponse['data'] | null>(null);
   const [bulkEmailError, setBulkEmailError] = useState<string | null>(null);
+  const [bulkEmailCampaignResult, setBulkEmailCampaignResult] = useState<any>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Safe Data Management Modal State
+  const [mgmtModalState, setMgmtModalState] = useState<{
+    isOpen: boolean;
+    actionType: ManagementActionType;
+    title: string;
+    description: string;
+    itemCount: number;
+    itemNames: string[];
+    warningMessage?: string;
+    requireTypedConfirmation?: boolean;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    actionType: 'DELETE',
+    title: '',
+    description: '',
+    itemCount: 0,
+    itemNames: [],
+    onConfirm: async () => {},
+  });
+
 
   // Dynamically load distinct states
   const { data: statesData = [] } = useQuery<string[]>({
@@ -217,6 +243,83 @@ export const AdminLoansPage: React.FC = () => {
   const selectedApplications = applications.filter((app) =>
     selectedIds.includes(app.id)
   );
+
+  // Safe Data Management Action Handlers
+  const handleBulkArchive = () => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'ARCHIVE',
+      title: 'Bulk Archive Loan Applications',
+      description: `Archive ${selectedIds.length} selected loan application(s). Historical audit trail will be retained.`,
+      itemCount: selectedIds.length,
+      itemNames: selectedApplications.map((a) => `#${a.applicationNumber} - ${a.customerName}`).slice(0, 5),
+      warningMessage: 'Archiving soft-cancels active processing for selected applications while preserving compliance history.',
+      onConfirm: async () => {
+        const res = await apiClient.post(API_ENDPOINTS.ADMIN_LOANS.BULK_ARCHIVE, { applicationIds: selectedIds });
+        setFeedback({ type: 'success', message: res.message || `Successfully archived ${res.count || selectedIds.length} loan application(s).` });
+        setSelectedIds([]);
+        refetch();
+      },
+    });
+  };
+
+  const handleBulkRestore = () => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'RESTORE',
+      title: 'Bulk Restore Loan Applications',
+      description: `Restore ${selectedIds.length} selected archived/cancelled loan application(s) back into active review status.`,
+      itemCount: selectedIds.length,
+      itemNames: selectedApplications.map((a) => `#${a.applicationNumber} - ${a.customerName}`).slice(0, 5),
+      warningMessage: 'Restoring applications will place them back into active review status.',
+      onConfirm: async () => {
+        const res = await apiClient.post(API_ENDPOINTS.ADMIN_LOANS.BULK_RESTORE, { applicationIds: selectedIds });
+        setFeedback({ type: 'success', message: res.message || `Successfully restored ${res.count || selectedIds.length} loan application(s).` });
+        setSelectedIds([]);
+        refetch();
+      },
+    });
+  };
+
+  const handleBulkDelete = () => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: 'Permanently Delete Selected Applications',
+      description: `Attempt permanent deletion of ${selectedIds.length} selected loan application(s).`,
+      itemCount: selectedIds.length,
+      itemNames: selectedApplications.map((a) => `#${a.applicationNumber} - ${a.customerName}`).slice(0, 5),
+      requireTypedConfirmation: true,
+      warningMessage: 'CRITICAL SECURITY RULE: Applications that are APPROVED, ACTIVE, or DISBURSED or linked to paid payments CANNOT be hard-deleted due to financial audit standards. Foreign-key protection will automatically soft-archive/cancel them instead.',
+      onConfirm: async () => {
+        const res = await apiClient.post(API_ENDPOINTS.ADMIN_LOANS.BULK_DELETE, { applicationIds: selectedIds });
+        setFeedback({ type: 'success', message: res.message || `Processed deletion for selected applications.` });
+        setSelectedIds([]);
+        refetch();
+      },
+    });
+  };
+
+  const handleSingleDelete = (app: AdminLoanApplicationListItem) => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: `Delete Application #${app.applicationNumber}`,
+      description: `Requesting deletion for loan application #${app.applicationNumber} (${app.customerName}).`,
+      itemCount: 1,
+      itemNames: [`#${app.applicationNumber} - ${app.customerName}`],
+      requireTypedConfirmation: true,
+      warningMessage: ['APPROVED', 'ACTIVE', 'DISBURSED'].includes((app.status || '').toUpperCase())
+        ? 'NOTE: This loan application is active/approved. Database foreign-key safety blocks raw SQL deletion and will soft-archive/cancel the application instead.'
+        : 'This action is permanent for unapproved draft applications.',
+      onConfirm: async () => {
+        const res = await apiClient.delete(API_ENDPOINTS.ADMIN_LOANS.DELETE(app.id));
+        setFeedback({ type: 'success', message: res.message || 'Application processed successfully.' });
+        refetch();
+      },
+    });
+  };
+
 
   const handleOpenBulkModal = () => {
     setBulkCampaignResult(null);
@@ -412,6 +515,16 @@ export const AdminLoansPage: React.FC = () => {
         </button>
       </div>
 
+      {/* Feedback Banner */}
+      {feedback && (
+        <div className={`p-4 rounded-xl border flex items-center justify-between font-medium text-xs ${
+          feedback.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'
+        }`}>
+          <span>{feedback.message}</span>
+          <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+        </div>
+      )}
+
       {/* Filter and Search Bar */}
       <Card className="bg-surface-elevated border border-border shadow-sm">
         <CardContent className="p-4 space-y-3">
@@ -519,46 +632,29 @@ export const AdminLoansPage: React.FC = () => {
       </Card>
 
       {/* Bulk Action Sticky Bar */}
-      {selectedIds.length > 0 && (
-        <div className="p-4 bg-slate-900 text-white rounded-2xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
-          <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs">
-              {selectedIds.length}
-            </span>
-            <span className="text-sm font-semibold">
-              {selectedIds.length} application{selectedIds.length > 1 ? 's' : ''} selected
-              {status && ` (${status.toLowerCase()} filter active)`}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={handleOpenBulkModal}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow transition"
-            >
-              <MessageSquare className="w-4 h-4" />
-              Send WhatsApp
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenBulkEmailModal}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow transition"
-            >
-              <Mail className="w-4 h-4" />
-              Send Email
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedIds([])}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl transition"
-            >
-              <X className="w-4 h-4" />
-              Clear Selection
-            </button>
-          </div>
-        </div>
-      )}
+      <BulkActionBar
+        selectedCount={selectedIds.length}
+        totalCount={applications.length}
+        onClearSelection={() => setSelectedIds([])}
+        onArchiveSelected={handleBulkArchive}
+        archiveLabel="Archive Selected"
+        onRestoreSelected={handleBulkRestore}
+        restoreLabel="Restore Selected"
+        onDeleteSelected={handleBulkDelete}
+        deleteLabel="Delete Selected"
+        customActions={[
+          {
+            label: 'Send WhatsApp',
+            icon: <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />,
+            onClick: handleOpenBulkModal,
+          },
+          {
+            label: 'Send Email',
+            icon: <Mail className="w-3.5 h-3.5 text-blue-400" />,
+            onClick: handleOpenBulkEmailModal,
+          },
+        ]}
+      />
 
       {/* Applications Data Table */}
       <Card className="bg-surface-elevated border border-border shadow-sm">
@@ -724,16 +820,27 @@ export const AdminLoansPage: React.FC = () => {
                           <TableCell className="text-xs text-text-secondary">
                             {new Date(app.submittedAt || app.createdAt).toLocaleDateString()}
                           </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => navigate(`/admin/loans/${app.id}`)}
-                              className="h-8 text-xs font-medium"
-                            >
-                              <Eye className="w-3.5 h-3.5 mr-1" />
-                              Review
-                            </Button>
+                          <TableCell className="text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end space-x-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => navigate(`/admin/loans/${app.id}`)}
+                                className="h-8 text-xs font-medium"
+                              >
+                                <Eye className="w-3.5 h-3.5 mr-1" />
+                                Review
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleSingleDelete(app)}
+                                className="h-8 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                                title="Delete or Archive Application"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -1137,7 +1244,7 @@ export const AdminLoansPage: React.FC = () => {
                       Email Delivery Log Breakdown
                     </h5>
                     <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                      {bulkEmailCampaignResult.results.map((r, i) => (
+                      {bulkEmailCampaignResult.results.map((r: any, i: number) => (
                         <div
                           key={i}
                           className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
@@ -1297,6 +1404,21 @@ export const AdminLoansPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Data Management Confirmation Modal */}
+      <DataManagementModal
+        isOpen={mgmtModalState.isOpen}
+        onClose={() => setMgmtModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={mgmtModalState.onConfirm}
+        actionType={mgmtModalState.actionType}
+        title={mgmtModalState.title}
+        description={mgmtModalState.description}
+        itemCount={mgmtModalState.itemCount}
+        itemNames={mgmtModalState.itemNames}
+        warningMessage={mgmtModalState.warningMessage}
+        requireTypedConfirmation={mgmtModalState.requireTypedConfirmation}
+        confirmTextRequired="DELETE"
+      />
     </div>
   );
 };

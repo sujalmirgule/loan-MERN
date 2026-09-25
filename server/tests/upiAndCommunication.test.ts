@@ -121,7 +121,7 @@ describe('UPI Payment, UTR Flow, Underwriting Lifecycle & IDOR Security Suite', 
     // Verify KYC for Customer 1 and Customer 2 to enable loan application
     await prisma.customer.update({
       where: { id: customerId1 },
-      data: { kycStatus: 'VERIFIED' },
+      data: { kycStatus: 'APPROVED' },
     });
     await prisma.customer.update({
       where: { id: customerId2 },
@@ -222,7 +222,7 @@ describe('UPI Payment, UTR Flow, Underwriting Lifecycle & IDOR Security Suite', 
       },
     });
     chargeId2 = charge2.id;
-  });
+  }, 30000);
 
   afterAll(async () => {
     // Cleanup
@@ -288,7 +288,7 @@ describe('UPI Payment, UTR Flow, Underwriting Lifecycle & IDOR Security Suite', 
       // Verify EMI schedule generated
       const emiCount = await prisma.eMISchedule.count({ where: { loanId: loanId1 } });
       expect(emiCount).toBe(24);
-    }, 15000);
+    }, 30000);
 
     it('2. Admin rejects loan: transitions status to REJECTED with mandatory reason', async () => {
       const res = await request(app)

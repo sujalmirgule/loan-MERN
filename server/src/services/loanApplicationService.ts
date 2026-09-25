@@ -1599,6 +1599,189 @@ export class LoanApplicationService {
       accountStatus: customer.status,
     };
   }
+
+  /**
+   * Archive / Cancel a loan application.
+   */
+  async archiveLoanApplication(
+    loanId: string,
+    actor: { id: string; fullName: string; email?: string },
+    ipAddress?: string
+  ) {
+    const loan = await prisma.loanApplication.findUnique({
+      where: { id: loanId },
+    });
+
+    if (!loan) throw new AppError(404, 'Loan application not found');
+
+    const updated = await prisma.loanApplication.update({
+      where: { id: loanId },
+      data: { status: 'CANCELLED' },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'LOAN_APPLICATION_ARCHIVED',
+      entity: 'LoanApplication',
+      entityId: loanId,
+      previousValue: { status: loan.status },
+      newValue: { status: 'CANCELLED' },
+      ipAddress,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Restore a cancelled / archived loan application.
+   */
+  async restoreLoanApplication(
+    loanId: string,
+    actor: { id: string; fullName: string; email?: string },
+    ipAddress?: string
+  ) {
+    const loan = await prisma.loanApplication.findUnique({
+      where: { id: loanId },
+    });
+
+    if (!loan) throw new AppError(404, 'Loan application not found');
+
+    const updated = await prisma.loanApplication.update({
+      where: { id: loanId },
+      data: { status: 'SUBMITTED' },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'LOAN_APPLICATION_RESTORED',
+      entity: 'LoanApplication',
+      entityId: loanId,
+      previousValue: { status: loan.status },
+      newValue: { status: 'SUBMITTED' },
+      ipAddress,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Permanently delete a loan application (FK Protected: Rejects approved/disbursed loans or loans with paid payments).
+   */
+  async deleteLoanApplication(
+    loanId: string,
+    actor: { id: string; fullName: string; email?: string },
+    ipAddress?: string
+  ) {
+    const loan = await prisma.loanApplication.findUnique({
+      where: { id: loanId },
+      include: {
+        payments: { select: { id: true, status: true } },
+        invoices: { select: { id: true } },
+        disbursements: { select: { id: true } },
+      },
+    });
+
+    if (!loan) throw new AppError(404, 'Loan application not found');
+
+    const isFinancialActive =
+      ['APPROVED', 'ACTIVE', 'DISBURSED'].includes(loan.status) ||
+      loan.payments.some((p) => ['PAID', 'SUCCESS', 'VERIFIED'].includes(p.status)) ||
+      loan.invoices.length > 0 ||
+      loan.disbursements.length > 0;
+
+    if (isFinancialActive) {
+      throw new AppError(
+        400,
+        'Cannot permanently delete an approved, active, or disbursed loan with financial/repayment records. Archive or cancel the application instead.'
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.deleteMany({ where: { loanId } });
+      await tx.charge.deleteMany({ where: { loanId } });
+      await tx.eMISchedule.deleteMany({ where: { loanId } });
+      await tx.loanAgreement.deleteMany({ where: { loanId } });
+      await tx.documentRequest.deleteMany({ where: { loanId } });
+      await tx.loanDocument.deleteMany({ where: { loanId } });
+      await tx.loanApplication.delete({ where: { id: loanId } });
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'LOAN_APPLICATION_PERMANENTLY_DELETED',
+      entity: 'LoanApplication',
+      entityId: loanId,
+      newValue: { loanId, applicationNumber: loan.applicationNumber },
+      ipAddress,
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Bulk archive / cancel loan applications.
+   */
+  async bulkArchiveApplications(
+    loanIds: string[],
+    actor: { id: string; fullName: string; email?: string },
+    ipAddress?: string
+  ) {
+    if (!loanIds || loanIds.length === 0) throw new AppError(400, 'No loan IDs specified');
+
+    for (const id of loanIds) {
+      await this.archiveLoanApplication(id, actor, ipAddress);
+    }
+    return { archivedCount: loanIds.length };
+  }
+
+  /**
+   * Bulk restore loan applications.
+   */
+  async bulkRestoreApplications(
+    loanIds: string[],
+    actor: { id: string; fullName: string; email?: string },
+    ipAddress?: string
+  ) {
+    if (!loanIds || loanIds.length === 0) throw new AppError(400, 'No loan IDs specified');
+
+    for (const id of loanIds) {
+      await this.restoreLoanApplication(id, actor, ipAddress);
+    }
+    return { restoredCount: loanIds.length };
+  }
+
+  /**
+   * Bulk delete loan applications (FK Protected).
+   */
+  async bulkDeleteApplications(
+    loanIds: string[],
+    actor: { id: string; fullName: string; email?: string },
+    ipAddress?: string
+  ) {
+    if (!loanIds || loanIds.length === 0) throw new AppError(400, 'No loan IDs specified');
+
+    let deletedCount = 0;
+    let archivedCount = 0;
+
+    for (const id of loanIds) {
+      try {
+        await this.deleteLoanApplication(id, actor, ipAddress);
+        deletedCount++;
+      } catch {
+        await this.archiveLoanApplication(id, actor, ipAddress);
+        archivedCount++;
+      }
+    }
+
+    return { deletedCount, archivedCount, total: loanIds.length };
+  }
 }
 
 export const loanApplicationService = new LoanApplicationService();
+

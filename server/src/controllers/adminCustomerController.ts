@@ -261,8 +261,80 @@ export class AdminCustomerController {
    */
   async manualCreateCustomer(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await adminCustomerService.manualCreateCustomer(req.body, req.user);
-      res.status(201).json({ success: true, message: 'Customer and loan created successfully', data });
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const result = await adminCustomerService.manualCreateCustomer(req.body, req.user);
+      res.status(201).json({ success: true, data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Bulk deactivate customer accounts.
+   */
+  async bulkDeactivateCustomers(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const { customerIds, reason } = req.body;
+      const result = await adminCustomerService.bulkDeactivateCustomers(customerIds, reason, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: `Successfully deactivated ${result.deactivatedCount} customer accounts.`,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Bulk reactivate customer accounts.
+   */
+  async bulkReactivateCustomers(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const { customerIds } = req.body;
+      const result = await adminCustomerService.bulkReactivateCustomers(customerIds, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: `Successfully reactivated ${result.reactivatedCount} customer accounts.`,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Single permanent delete customer account (FK Protected).
+   */
+  async deleteCustomer(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const id = String(req.params.id);
+      await adminCustomerService.deleteCustomer(id, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: 'Customer record deleted successfully.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Bulk permanent delete customer accounts (FK Protected).
+   */
+  async bulkDeleteCustomers(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const { customerIds } = req.body;
+      const result = await adminCustomerService.bulkDeleteCustomers(customerIds, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: `Bulk delete completed: ${result.deletedCount} deleted, ${result.deactivatedCount} deactivated due to financial records.`,
+        data: result,
+      });
     } catch (err) {
       next(err);
     }
@@ -270,5 +342,6 @@ export class AdminCustomerController {
 }
 
 export const adminCustomerController = new AdminCustomerController();
+
 
 

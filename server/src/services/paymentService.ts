@@ -1062,6 +1062,137 @@ export class PaymentService {
 
     return updated;
   }
+
+  /**
+   * Archive / Reject a payment record.
+   */
+  async archivePayment(paymentId: string, actor: AuthenticatedUser, ipAddress?: string) {
+    const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new AppError(404, 'Payment record not found');
+
+    const updated = await prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: 'REJECTED', rejectionReason: 'Archived by Admin' },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'PAYMENT_ARCHIVED',
+      entity: 'Payment',
+      entityId: paymentId,
+      newValue: { status: 'REJECTED' },
+      ipAddress,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Restore an archived payment record.
+   */
+  async restorePayment(paymentId: string, actor: AuthenticatedUser, ipAddress?: string) {
+    const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new AppError(404, 'Payment record not found');
+
+    const updated = await prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: 'UNDER_VERIFICATION', rejectionReason: null },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'PAYMENT_RESTORED',
+      entity: 'Payment',
+      entityId: paymentId,
+      newValue: { status: 'UNDER_VERIFICATION' },
+      ipAddress,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Permanently delete a payment record (FK Protected: Rejects verified/PAID payments or payments with an active invoice).
+   */
+  async deletePayment(paymentId: string, actor: AuthenticatedUser, ipAddress?: string) {
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (!payment) throw new AppError(404, 'Payment record not found');
+
+    const invoice = await prisma.invoice.findFirst({ where: { paymentId } });
+    if (payment.status === 'PAID' || payment.status === 'SUCCESS' || payment.status === 'VERIFIED' || invoice) {
+      throw new AppError(
+        400,
+        'Cannot permanently delete a verified or paid payment record linked to an official tax invoice. Archive the record instead.'
+      );
+    }
+
+    await prisma.payment.delete({ where: { id: paymentId } });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'PAYMENT_DELETED',
+      entity: 'Payment',
+      entityId: paymentId,
+      newValue: { paymentId, transactionRef: payment.transactionRef },
+      ipAddress,
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Bulk archive payments.
+   */
+  async bulkArchivePayments(paymentIds: string[], actor: AuthenticatedUser, ipAddress?: string) {
+    if (!paymentIds || paymentIds.length === 0) throw new AppError(400, 'No payment IDs specified');
+    for (const id of paymentIds) {
+      await this.archivePayment(id, actor, ipAddress);
+    }
+    return { archivedCount: paymentIds.length };
+  }
+
+  /**
+   * Bulk restore payments.
+   */
+  async bulkRestorePayments(paymentIds: string[], actor: AuthenticatedUser, ipAddress?: string) {
+    if (!paymentIds || paymentIds.length === 0) throw new AppError(400, 'No payment IDs specified');
+    for (const id of paymentIds) {
+      await this.restorePayment(id, actor, ipAddress);
+    }
+    return { restoredCount: paymentIds.length };
+  }
+
+  /**
+   * Bulk delete payments (FK Protected).
+   */
+  async bulkDeletePayments(paymentIds: string[], actor: AuthenticatedUser, ipAddress?: string) {
+    if (!paymentIds || paymentIds.length === 0) throw new AppError(400, 'No payment IDs specified');
+
+    let deletedCount = 0;
+    let archivedCount = 0;
+
+    for (const id of paymentIds) {
+      try {
+        await this.deletePayment(id, actor, ipAddress);
+        deletedCount++;
+      } catch {
+        await this.archivePayment(id, actor, ipAddress);
+        archivedCount++;
+      }
+    }
+
+    return { deletedCount, archivedCount, total: paymentIds.length };
+  }
 }
 
 export const paymentService = new PaymentService();
+

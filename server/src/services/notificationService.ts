@@ -109,6 +109,36 @@ export class NotificationService {
       data: { isRead: true },
     });
   }
+
+  /**
+   * Admin: Mark all admin notifications read.
+   */
+  async markAllAdminNotificationsRead() {
+    return prisma.notification.updateMany({
+      where: { recipientType: 'ADMIN', isRead: false },
+      data: { isRead: true },
+    });
+  }
+
+  /**
+   * Admin: Delete single notification.
+   */
+  async deleteAdminNotification(notificationId: string) {
+    return prisma.notification.delete({
+      where: { id: notificationId },
+    });
+  }
+
+  /**
+   * Admin: Bulk delete notifications.
+   */
+  async bulkDeleteAdminNotifications(ids: string[]) {
+    const result = await prisma.notification.deleteMany({
+      where: { id: { in: ids }, recipientType: 'ADMIN' },
+    });
+    return result.count;
+  }
 }
 
 export const notificationService = new NotificationService();
+

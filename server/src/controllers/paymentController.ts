@@ -162,6 +162,87 @@ export class PaymentController {
       next(err);
     }
   }
+
+  /**
+   * Admin: Archive payment
+   */
+  async archivePayment(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const result = await paymentService.archivePayment(req.params.id as string, req.user, req.ip);
+      res.status(200).json({ success: true, message: 'Payment archived successfully', data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Restore archived payment
+   */
+  async restorePayment(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const result = await paymentService.restorePayment(req.params.id as string, req.user, req.ip);
+      res.status(200).json({ success: true, message: 'Payment restored successfully', data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Delete single payment (unverified/pending only)
+   */
+  async deletePayment(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const result = await paymentService.deletePayment(req.params.id as string, req.user, req.ip);
+      res.status(200).json({ success: true, message: 'Payment deleted successfully', data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Bulk Archive Payments
+   */
+  async bulkArchivePayments(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const { ids } = req.body;
+      const result = await paymentService.bulkArchivePayments(ids, req.user, req.ip);
+      res.status(200).json({ success: true, message: `Archived ${result.archivedCount} payments`, archivedCount: result.archivedCount });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Bulk Restore Payments
+   */
+  async bulkRestorePayments(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const { ids } = req.body;
+      const result = await paymentService.bulkRestorePayments(ids, req.user, req.ip);
+      res.status(200).json({ success: true, message: `Restored ${result.restoredCount} payments`, restoredCount: result.restoredCount });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Admin: Bulk Delete Payments
+   */
+  async bulkDeletePayments(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) throw new AppError(401, 'Unauthorized');
+      const { ids } = req.body;
+      const result = await paymentService.bulkDeletePayments(ids, req.user, req.ip);
+      res.status(200).json({ success: true, message: `Bulk delete completed: ${result.deletedCount} deleted, ${result.archivedCount} archived`, deletedCount: result.deletedCount, archivedCount: result.archivedCount });
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const paymentController = new PaymentController();

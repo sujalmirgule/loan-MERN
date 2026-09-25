@@ -46,10 +46,10 @@ router.get('/customers/states', requirePermission('customers.view'), adminCustom
 router.get('/customers/export', requirePermission(['customers.view', 'reports.export']), adminCustomerController.exportCsv);
 router.post('/customers/manual', requirePermission('customers.create'), adminCustomerController.manualCreateCustomer);
 router.get('/customers/:id', requirePermission('customers.view'), adminCustomerController.getCustomer360);
-router.patch('/customers/:id/deactivate', requirePermission(['customers.delete', 'customers.edit']), adminCustomerController.deactivateCustomer);
-router.patch('/customers/:id/reactivate', requirePermission(['customers.delete', 'customers.edit']), adminCustomerController.reactivateCustomer);
-router.post('/customers/:id/whatsapp/pending', requirePermission('communication.whatsapp'), adminCustomerController.sendWhatsAppPending);
-router.get('/customers/:id/whatsapp/history', requirePermission('communication.history'), adminCustomerController.getWhatsAppHistory);
+router.delete('/customers/:id', requirePermission('customers.delete'), adminCustomerController.deleteCustomer);
+router.post('/customers/bulk-delete', requirePermission('customers.delete'), adminCustomerController.bulkDeleteCustomers);
+router.post('/customers/bulk-deactivate', requirePermission(['customers.delete', 'customers.edit']), adminCustomerController.bulkDeactivateCustomers);
+router.post('/customers/bulk-reactivate', requirePermission(['customers.delete', 'customers.edit']), adminCustomerController.bulkReactivateCustomers);
 router.get('/customers/:id/invoice/pdf', requirePermission(['charges.view', 'payments.view']), adminCustomerController.downloadInvoicePdf);
 router.get('/customers/:id/approval-letter/pdf', requirePermission(['applications.view', 'applications.approve']), adminCustomerController.downloadApprovalLetterPdf);
 
@@ -81,6 +81,12 @@ router.post('/loan-applications/:id/hold', requirePermission('applications.revie
 router.post('/loan-applications/:id/reject', requirePermission('applications.reject'), loanApplicationController.rejectApplication);
 router.post('/loan-applications/:id/approve', requirePermission('applications.approve'), loanApplicationController.approveApplication);
 router.post('/loan-applications/:id/modify-amount', requirePermission('applications.review'), loanApplicationController.modifyAmount);
+router.post('/loan-applications/:id/archive', requirePermission('applications.reject'), loanApplicationController.archiveApplication);
+router.post('/loan-applications/:id/restore', requirePermission('applications.review'), loanApplicationController.restoreApplication);
+router.delete('/loan-applications/:id', requirePermission('applications.reject'), loanApplicationController.deleteApplication);
+router.post('/loan-applications/bulk-archive', requirePermission('applications.reject'), loanApplicationController.bulkArchiveApplications);
+router.post('/loan-applications/bulk-restore', requirePermission('applications.review'), loanApplicationController.bulkRestoreApplications);
+router.post('/loan-applications/bulk-delete', requirePermission('applications.reject'), loanApplicationController.bulkDeleteApplications);
 router.get('/loans/:id/agreement', requirePermission('applications.view'), agreementController.getAdminAgreement);
 
 // --- Payment Management Endpoints ---
@@ -90,6 +96,12 @@ router.patch('/payments/:id/verify', requirePermission('payments.verify'), payme
 router.post('/payments/:id/verify', requirePermission('payments.verify'), paymentController.verifyPayment);
 router.patch('/payments/:id/reject', requirePermission('payments.reject'), paymentController.rejectPayment);
 router.post('/payments/:id/reject', requirePermission('payments.reject'), paymentController.rejectPayment);
+router.post('/payments/:id/archive', requirePermission('payments.reject'), paymentController.archivePayment);
+router.post('/payments/:id/restore', requirePermission('payments.verify'), paymentController.restorePayment);
+router.delete('/payments/:id', requirePermission('payments.reject'), paymentController.deletePayment);
+router.post('/payments/bulk-archive', requirePermission('payments.reject'), paymentController.bulkArchivePayments);
+router.post('/payments/bulk-restore', requirePermission('payments.verify'), paymentController.bulkRestorePayments);
+router.post('/payments/bulk-delete', requirePermission('payments.reject'), paymentController.bulkDeletePayments);
 
 // --- Disbursement Management Endpoints ---
 router.get('/disbursements', requirePermission('payments.view'), disbursementController.listDisbursements);
@@ -162,12 +174,14 @@ router.get('/settings/payment-links', requirePermission('upi.view'), paymentConf
 router.post('/settings/payment-links', requirePermission('upi.manage'), paymentConfigAdvancedController.createPaymentLink);
 router.patch('/settings/payment-links/:id', requirePermission('upi.manage'), paymentConfigAdvancedController.updatePaymentLink);
 router.delete('/settings/payment-links/:id', requirePermission('upi.manage'), paymentConfigAdvancedController.deletePaymentLink);
+router.post('/settings/payment-links/bulk-delete', requirePermission('upi.manage'), paymentConfigAdvancedController.bulkDeletePaymentLinks);
 
 // --- Multi-Tenant Domain Management ---
 router.get('/domains', requirePermission('domains.view'), domainController.listDomains);
 router.post('/domains', requirePermission('domains.manage'), domainController.createDomain);
 router.patch('/domains/:id', requirePermission('domains.manage'), domainController.updateDomain);
 router.delete('/domains/:id', requirePermission('domains.manage'), domainController.deleteDomain);
+router.post('/domains/bulk-delete', requirePermission('domains.manage'), domainController.bulkDeleteDomains);
 
 // --- Charges & Fees Management ---
 router.get('/charges/config', requirePermission('charges.view'), (req, res, next) => chargesController.getConfig(req, res, next));
@@ -191,12 +205,18 @@ router.post('/charges/specific/:chargeId/cancel', requirePermission('charges.edi
 router.post('/charges/specific/:chargeId/remind', requirePermission('charges.send'), (req, res, next) => specificChargesController.sendReminder(req, res, next));
 router.get('/charges/specific/:chargeId/invoice', requirePermission('charges.view'), (req, res, next) => specificChargesController.getInvoicePdf(req, res, next));
 router.post('/charges/specific/:chargeId/verify-payment', requirePermission('payments.verify'), (req, res, next) => specificChargesController.verifySpecificChargePayment(req, res, next));
+router.delete('/charges/specific/:chargeId', requirePermission('charges.edit'), (req, res, next) => specificChargesController.deleteCharge(req, res, next));
+router.post('/charges/specific/bulk-cancel', requirePermission('charges.edit'), (req, res, next) => specificChargesController.bulkCancelCharges(req, res, next));
+router.post('/charges/specific/bulk-delete', requirePermission('charges.edit'), (req, res, next) => specificChargesController.bulkDeleteCharges(req, res, next));
 
 // --- Admin Users Management ---
 router.get('/users', requirePermission('admin_users.view'), adminUserController.listUsers);
 router.post('/users', requirePermission('admin_users.create'), adminUserController.createUser);
 router.put('/users/:id', requirePermission(['admin_users.edit', 'admin_users.disable']), adminUserController.updateUser);
 router.patch('/users/:id', requirePermission(['admin_users.edit', 'admin_users.disable']), adminUserController.updateUser);
+router.delete('/users/:id', requirePermission('admin_users.disable'), adminUserController.deleteUser);
+router.post('/users/bulk-deactivate', requirePermission('admin_users.disable'), adminUserController.bulkDeactivateUsers);
+router.post('/users/bulk-delete', requirePermission('admin_users.disable'), adminUserController.bulkDeleteUsers);
 
 // --- PDF Generation Endpoint ---
 router.get('/loans/:id/approval-letter/pdf', requirePermission('applications.view'), agreementController.downloadApprovalLetterPdf);
@@ -204,6 +224,9 @@ router.get('/loans/:id/approval-letter/pdf', requirePermission('applications.vie
 // --- Support Ticket Management ---
 router.get('/support/tickets', requirePermission('communication.history'), supportController.listAllTickets);
 router.post('/support/tickets/:id/reply', requirePermission('communication.email'), supportController.replyTicket);
+router.delete('/support/tickets/:id', requirePermission('communication.email'), supportController.deleteTicket);
+router.post('/support/tickets/bulk-close', requirePermission('communication.email'), supportController.bulkCloseTickets);
+router.post('/support/tickets/bulk-delete', requirePermission('communication.email'), supportController.bulkDeleteTickets);
 
 // --- Customer Communication Center (Email & Messages) ---
 router.get('/communication/customers', requirePermission(['customers.view', 'communication.email', 'communication.whatsapp']), (req, res, next) => communicationController.listCommunicationCustomers(req, res, next));
@@ -242,6 +265,9 @@ router.patch('/settings/communication', requirePermission('settings.manage'), as
 
 // --- Admin Notifications ---
 router.get('/notifications', requirePermission(['customers.view', 'applications.view', 'payments.view', 'kyc.view']), notificationController.getAdminNotifications);
+router.patch('/notifications/read-all', requirePermission(['customers.view', 'applications.view', 'payments.view', 'kyc.view']), notificationController.markAllAdminNotificationsRead);
 router.patch('/notifications/:id/read', requirePermission(['customers.view', 'applications.view', 'payments.view', 'kyc.view']), notificationController.markAdminNotificationRead);
+router.delete('/notifications/:id', requirePermission(['customers.view', 'applications.view', 'payments.view', 'kyc.view']), notificationController.deleteAdminNotification);
+router.post('/notifications/bulk-delete', requirePermission(['customers.view', 'applications.view', 'payments.view', 'kyc.view']), notificationController.bulkDeleteAdminNotifications);
 
 export default router;

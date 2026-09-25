@@ -18,7 +18,7 @@ export async function getHealthCheck(_req: Request, res: Response): Promise<void
     timestamp: new Date().toISOString(),
     database: {
       status: dbStatus,
-      type: 'SQLite',
+      type: process.env.DATABASE_URL?.startsWith('mysql') ? 'MySQL' : 'SQLite',
     },
   });
 }

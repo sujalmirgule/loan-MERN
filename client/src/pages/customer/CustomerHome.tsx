@@ -1552,7 +1552,20 @@ export const CustomerHome: React.FC = () => {
                 return (
                   <div
                     key={notif.id}
-                    onClick={() => navigate('/customer/notifications')}
+                    onClick={() => {
+                      const text = `${notif.title || ''} ${notif.message || ''}`.toLowerCase();
+                      if (text.includes('payment') || text.includes('fee') || text.includes('charge') || text.includes('utr') || text.includes('due')) {
+                        let chargeParam = '';
+                        if (text.includes('stamp')) chargeParam = '?charge=stamp_duty';
+                        else if (text.includes('gst')) chargeParam = '?charge=gst';
+                        else if (text.includes('insurance')) chargeParam = '?charge=insurance';
+                        else if (text.includes('processing')) chargeParam = '?charge=processing_fee';
+                        else if (text.includes('late')) chargeParam = '?charge=late_payment';
+                        navigate(`/customer/payment${chargeParam}`);
+                      } else {
+                        navigate('/customer/notifications');
+                      }
+                    }}
                     className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer shadow-xs flex items-center justify-between gap-4 ${
                       isApproved
                         ? 'bg-[#F0FDF4] border-[#BBF7D0] hover:border-[#16A34A]'

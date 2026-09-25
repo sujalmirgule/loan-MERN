@@ -160,6 +160,68 @@ export class SupportService {
 
     return updated;
   }
+
+  async deleteTicket(ticketId: string, actor: AuthenticatedUser, ipAddress?: string) {
+    const ticket = await prisma.supportTicket.findUnique({ where: { id: ticketId } });
+    if (!ticket) {
+      throw new AppError(404, 'Support ticket not found');
+    }
+
+    await prisma.supportTicket.delete({ where: { id: ticketId } });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'SUPPORT_TICKET_DELETED',
+      entity: 'SupportTicket',
+      entityId: ticketId,
+      previousValue: { subject: ticket.subject, status: ticket.status },
+      ipAddress,
+    });
+
+    return true;
+  }
+
+  async bulkCloseTickets(ticketIds: string[], actor: AuthenticatedUser, ipAddress?: string) {
+    const result = await prisma.supportTicket.updateMany({
+      where: { id: { in: ticketIds } },
+      data: { status: 'RESOLVED', resolvedAt: new Date() },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'SUPPORT_TICKET_BULK_CLOSED',
+      entity: 'SupportTicket',
+      entityId: 'BULK',
+      newValue: { count: result.count, requestedCount: ticketIds.length },
+      ipAddress,
+    });
+
+    return result.count;
+  }
+
+  async bulkDeleteTickets(ticketIds: string[], actor: AuthenticatedUser, ipAddress?: string) {
+    const result = await prisma.supportTicket.deleteMany({
+      where: { id: { in: ticketIds } },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'SUPPORT_TICKET_BULK_DELETED',
+      entity: 'SupportTicket',
+      entityId: 'BULK',
+      newValue: { count: result.count, requestedCount: ticketIds.length },
+      ipAddress,
+    });
+
+    return result.count;
+  }
 }
 
 export const supportService = new SupportService();
+

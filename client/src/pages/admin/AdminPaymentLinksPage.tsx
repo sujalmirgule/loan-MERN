@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { api } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
+import { DataManagementModal, ManagementActionType } from '@/components/admin/DataManagementModal';
 
 interface PaymentLinkItem {
   id: string;
@@ -27,6 +28,27 @@ export const AdminPaymentLinksPage: React.FC = () => {
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Selection & Safe Data Management Modal State
+  const [mgmtModalState, setMgmtModalState] = useState<{
+    isOpen: boolean;
+    actionType: ManagementActionType;
+    title: string;
+    description: string;
+    itemCount: number;
+    itemNames: string[];
+    warningMessage?: string;
+    requireTypedConfirmation?: boolean;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    actionType: 'DELETE',
+    title: '',
+    description: '',
+    itemCount: 0,
+    itemNames: [],
+    onConfirm: async () => {},
+  });
 
   const { data: links, isLoading, refetch } = useQuery<PaymentLinkItem[]>({
     queryKey: ['adminPaymentLinks'],
@@ -63,21 +85,32 @@ export const AdminPaymentLinksPage: React.FC = () => {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return api.delete(API_ENDPOINTS.PAYMENT_LINKS.DELETE(id));
-    },
-    onSuccess: () => {
-      setSuccessMsg('Payment link removed successfully');
-      queryClient.invalidateQueries({ queryKey: ['adminPaymentLinks'] });
-      queryClient.invalidateQueries({ queryKey: ['activePaymentOptions'] });
-      refetch();
-      setTimeout(() => setSuccessMsg(null), 3000);
-    },
-    onError: (err: unknown) => {
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to delete payment link');
-    },
-  });
+  // Safe Delete Handlers
+
+
+  const handleSingleDelete = (link: PaymentLinkItem) => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: `Delete Payment Link: ${link.title}`,
+      description: `Requesting permanent removal for payment link '${link.title}'.`,
+      itemCount: 1,
+      itemNames: [`${link.title} (${link.url})`],
+      requireTypedConfirmation: true,
+      warningMessage: 'This action is permanent and removes payment link option for borrowers.',
+      onConfirm: async () => {
+        try {
+          await api.delete(API_ENDPOINTS.PAYMENT_LINKS.DELETE(link.id));
+          setSuccessMsg('Payment link removed successfully');
+          queryClient.invalidateQueries({ queryKey: ['adminPaymentLinks'] });
+          queryClient.invalidateQueries({ queryKey: ['activePaymentOptions'] });
+          refetch();
+        } catch (err: any) {
+          setErrorMsg(err.response?.data?.message || err.message || 'Failed to delete payment link');
+        }
+      },
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -248,9 +281,9 @@ export const AdminPaymentLinksPage: React.FC = () => {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => deleteMutation.mutate(link.id)}
-                          disabled={deleteMutation.isPending}
+                          onClick={() => handleSingleDelete(link)}
                           className="text-[#DC2626] hover:text-[#991B1B] hover:bg-[#FEF2F2] p-1.5 h-8 w-8 rounded-lg"
+                          title="Delete Payment Link"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -269,6 +302,20 @@ export const AdminPaymentLinksPage: React.FC = () => {
           </div>
         </Card>
       </div>
+      {/* Safe Data Management System Confirmation Modal */}
+      <DataManagementModal
+        isOpen={mgmtModalState.isOpen}
+        onClose={() => setMgmtModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={mgmtModalState.onConfirm}
+        actionType={mgmtModalState.actionType}
+        title={mgmtModalState.title}
+        description={mgmtModalState.description}
+        itemCount={mgmtModalState.itemCount}
+        itemNames={mgmtModalState.itemNames}
+        warningMessage={mgmtModalState.warningMessage}
+        requireTypedConfirmation={mgmtModalState.requireTypedConfirmation}
+        confirmTextRequired="DELETE"
+      />
     </div>
   );
 };

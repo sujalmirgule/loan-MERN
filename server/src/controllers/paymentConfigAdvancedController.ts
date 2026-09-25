@@ -324,6 +324,28 @@ export class PaymentConfigAdvancedController {
     }
   }
 
+  async bulkDeletePaymentLinks(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, message: 'ids array is required' });
+      }
+
+      const result = await prisma.paymentLink.deleteMany({
+        where: { id: { in: ids } },
+      });
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.count} payment link(s).`,
+        count: result.count,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+
   /**
    * Backwards compatible: Get all active payment options matching frontend contracts.
    */

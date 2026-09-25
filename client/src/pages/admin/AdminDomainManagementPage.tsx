@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
+import { DataManagementModal, ManagementActionType } from '@/components/admin/DataManagementModal';
 
 interface DomainRecord {
   id: string;
@@ -40,6 +41,27 @@ export const AdminDomainManagementPage: React.FC = () => {
   const [isActive, setIsActive] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Selection & Safe Data Management Modal State
+  const [mgmtModalState, setMgmtModalState] = useState<{
+    isOpen: boolean;
+    actionType: ManagementActionType;
+    title: string;
+    description: string;
+    itemCount: number;
+    itemNames: string[];
+    warningMessage?: string;
+    requireTypedConfirmation?: boolean;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    actionType: 'DELETE',
+    title: '',
+    description: '',
+    itemCount: 0,
+    itemNames: [],
+    onConfirm: async () => {},
+  });
 
   // Fetch domains
   const { data: domains, refetch } = useQuery<DomainRecord[]>({
@@ -78,17 +100,33 @@ export const AdminDomainManagementPage: React.FC = () => {
     },
   });
 
-  // Delete Domain Mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return api.delete(API_ENDPOINTS.DOMAINS.DELETE(id));
-    },
-    onSuccess: () => {
-      setSuccessMsg('Domain removed successfully');
-      queryClient.invalidateQueries({ queryKey: ['adminDomains'] });
-      refetch();
-    },
-  });
+  // Safe Delete Handlers
+
+  const handleSingleDelete = (domain: DomainRecord) => {
+    const hasLinkedRecords = (domain._count?.customers ?? 0) > 0 || (domain._count?.loans ?? 0) > 0;
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: `Delete Domain: ${domain.domainName}`,
+      description: `Requesting permanent deletion for domain ${domain.domainName}.`,
+      itemCount: 1,
+      itemNames: [`${domain.domainName} (${domain._count?.customers || 0} customers, ${domain._count?.loans || 0} loans)`],
+      requireTypedConfirmation: true,
+      warningMessage: hasLinkedRecords
+        ? `CANNOT DELETE: Domain '${domain.domainName}' has ${domain._count?.customers || 0} associated customer(s) and ${domain._count?.loans || 0} loan(s). Foreign key protection will reject this deletion; deactivate the domain instead.`
+        : 'This action is permanent and removes domain routing configuration.',
+      onConfirm: async () => {
+        try {
+          const res = await api.delete(API_ENDPOINTS.DOMAINS.DELETE(domain.id));
+          setSuccessMsg(res.data?.message || 'Domain removed successfully');
+          queryClient.invalidateQueries({ queryKey: ['adminDomains'] });
+          refetch();
+        } catch (err: any) {
+          setErrorMsg(err.response?.data?.message || err.message || 'Failed to delete domain');
+        }
+      },
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -275,8 +313,9 @@ export const AdminDomainManagementPage: React.FC = () => {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => deleteMutation.mutate(dom.id)}
+                      onClick={() => handleSingleDelete(dom)}
                       className="text-danger hover:text-red-300 hover:bg-danger/10 p-1.5 h-8 w-8 rounded-lg"
+                      title="Delete Domain"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -291,6 +330,20 @@ export const AdminDomainManagementPage: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+      {/* Safe Data Management System Confirmation Modal */}
+      <DataManagementModal
+        isOpen={mgmtModalState.isOpen}
+        onClose={() => setMgmtModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={mgmtModalState.onConfirm}
+        actionType={mgmtModalState.actionType}
+        title={mgmtModalState.title}
+        description={mgmtModalState.description}
+        itemCount={mgmtModalState.itemCount}
+        itemNames={mgmtModalState.itemNames}
+        warningMessage={mgmtModalState.warningMessage}
+        requireTypedConfirmation={mgmtModalState.requireTypedConfirmation}
+        confirmTextRequired="DELETE"
+      />
     </div>
   );
 };

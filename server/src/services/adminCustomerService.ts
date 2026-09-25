@@ -918,7 +918,174 @@ export class AdminCustomerService {
 
     return updated;
   }
+
+  /**
+   * Bulk deactivate / soft-delete multiple customer accounts.
+   */
+  async bulkDeactivateCustomers(
+    customerIds: string[],
+    reason?: string,
+    actor?: { id: string; fullName: string; email: string },
+    ipAddress?: string
+  ) {
+    if (!customerIds || customerIds.length === 0) {
+      throw new AppError(400, 'No customer IDs specified for bulk deactivation.');
+    }
+
+    const now = new Date();
+    await prisma.customer.updateMany({
+      where: { id: { in: customerIds } },
+      data: {
+        status: 'DEACTIVATED',
+        isActive: false,
+        deletedAt: now,
+      },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor?.id,
+      actorName: actor?.fullName || actor?.email || 'System Admin',
+      action: 'BULK_CUSTOMERS_DEACTIVATED',
+      entity: 'Customer',
+      entityId: 'BULK',
+      newValue: {
+        count: customerIds.length,
+        customerIds,
+        reason: reason || 'Bulk Administrative Deactivation',
+      },
+      ipAddress,
+    });
+
+    return { deactivatedCount: customerIds.length };
+  }
+
+  /**
+   * Bulk reactivate / restore multiple customer accounts.
+   */
+  async bulkReactivateCustomers(
+    customerIds: string[],
+    actor?: { id: string; fullName: string; email: string },
+    ipAddress?: string
+  ) {
+    if (!customerIds || customerIds.length === 0) {
+      throw new AppError(400, 'No customer IDs specified for bulk reactivation.');
+    }
+
+    await prisma.customer.updateMany({
+      where: { id: { in: customerIds } },
+      data: {
+        status: 'ACTIVE',
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor?.id,
+      actorName: actor?.fullName || actor?.email || 'System Admin',
+      action: 'BULK_CUSTOMERS_REACTIVATED',
+      entity: 'Customer',
+      entityId: 'BULK',
+      newValue: {
+        count: customerIds.length,
+        customerIds,
+      },
+      ipAddress,
+    });
+
+    return { reactivatedCount: customerIds.length };
+  }
+
+  /**
+   * Safely deletes a single customer record if no active loans/payments exist.
+   * Throws 400 error if customer has financial history.
+   */
+  async deleteCustomer(
+    customerId: string,
+    actor?: { id: string; fullName: string; email: string },
+    ipAddress?: string
+  ) {
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      include: {
+        loans: { select: { id: true, status: true } },
+        payments: { select: { id: true, status: true } },
+        invoices: { select: { id: true } },
+      },
+    });
+
+    if (!customer) {
+      throw new AppError(404, 'Customer record not found');
+    }
+
+    const hasFinancials =
+      customer.loans.some((l) => ['APPROVED', 'ACTIVE', 'DISBURSED'].includes(l.status)) ||
+      customer.payments.some((p) => ['PAID', 'SUCCESS', 'VERIFIED'].includes(p.status)) ||
+      customer.invoices.length > 0;
+
+    if (hasFinancials) {
+      throw new AppError(
+        400,
+        'Cannot permanently delete customer with active or approved loan/financial history. Please deactivate / archive the account instead.'
+      );
+    }
+
+    // Transactional cleanup of unlinked customer data
+    await prisma.$transaction(async (tx) => {
+      await tx.notification.deleteMany({ where: { customerId } });
+      await tx.loanDocument.deleteMany({ where: { customerId } });
+      await tx.documentRequest.deleteMany({ where: { customerId } });
+      await tx.charge.deleteMany({ where: { customerId } });
+      await tx.payment.deleteMany({ where: { customerId } });
+      await tx.loanApplication.deleteMany({ where: { customerId } });
+      await tx.customer.delete({ where: { id: customerId } });
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor?.id,
+      actorName: actor?.fullName || actor?.email || 'System Admin',
+      action: 'CUSTOMER_PERMANENTLY_DELETED',
+      entity: 'Customer',
+      entityId: customerId,
+      newValue: { customerId, fullName: customer.fullName, mobile: customer.mobile },
+      ipAddress,
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Bulk permanent delete with FK safety check.
+   */
+  async bulkDeleteCustomers(
+    customerIds: string[],
+    actor?: { id: string; fullName: string; email: string },
+    ipAddress?: string
+  ) {
+    if (!customerIds || customerIds.length === 0) {
+      throw new AppError(400, 'No customer IDs specified for bulk deletion.');
+    }
+
+    let deletedCount = 0;
+    let deactivatedCount = 0;
+
+    for (const id of customerIds) {
+      try {
+        await this.deleteCustomer(id, actor, ipAddress);
+        deletedCount++;
+      } catch {
+        await this.deactivateCustomer(id, 'Bulk Deactivation (Financial History Present)', actor, ipAddress);
+        deactivatedCount++;
+      }
+    }
+
+    return { deletedCount, deactivatedCount, total: customerIds.length };
+  }
 }
 
 export const adminCustomerService = new AdminCustomerService();
+
 

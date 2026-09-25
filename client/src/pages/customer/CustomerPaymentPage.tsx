@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
@@ -82,8 +82,9 @@ export const CustomerPaymentPage: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const [searchParams] = useSearchParams();
-  const chargeIdParam = searchParams.get('chargeId');
+  const chargeIdParam = searchParams.get('chargeId') || searchParams.get('charge');
   const [selectedChargeId, setSelectedChargeId] = useState<string | null>(chargeIdParam);
+  const [hasCompletedPayment, setHasCompletedPayment] = useState(false);
 
   // Per-charge download states
   const [downloadingChargeId, setDownloadingChargeId] = useState<string | null>(null);
@@ -184,10 +185,31 @@ export const CustomerPaymentPage: React.FC = () => {
   });
 
   useEffect(() => {
-    if (chargeIdParam) {
-      setSelectedChargeId(chargeIdParam);
+    if (chargeIdParam && customerCharges.length > 0) {
+      const match = customerCharges.find(
+        (c: any) =>
+          c.id === chargeIdParam ||
+          c.name?.toLowerCase().replace(/[\s/_-]+/g, '') === chargeIdParam.toLowerCase().replace(/[\s/_-]+/g, '') ||
+          normalizeChargeName(c.name || '').toLowerCase().includes(chargeIdParam.toLowerCase())
+      );
+      if (match) {
+        setSelectedChargeId(match.id);
+      } else {
+        setSelectedChargeId(chargeIdParam);
+      }
     }
-  }, [chargeIdParam]);
+  }, [chargeIdParam, customerCharges]);
+
+  const previousChargeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (previousChargeIdRef.current && selectedChargeId && previousChargeIdRef.current !== selectedChargeId) {
+      setHasCompletedPayment(false);
+      setUtrNumber('');
+    }
+    if (selectedChargeId) {
+      previousChargeIdRef.current = selectedChargeId;
+    }
+  }, [selectedChargeId]);
 
   const pendingCharges = customerCharges.filter((c: any) => c.status === 'PENDING' || c.status === 'UNDER_VERIFICATION');
   const paidCharges = customerCharges.filter((c: any) => c.status === 'PAID');
@@ -493,7 +515,7 @@ export const CustomerPaymentPage: React.FC = () => {
                                 setSelectedChargeId(chg.id);
                                 const optionsEl = document.getElementById('payment-options-section');
                                 if (optionsEl) {
-                                  optionsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                  optionsEl?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
                                 }
                               }}
                               className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs h-9 px-4 font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
@@ -502,8 +524,9 @@ export const CustomerPaymentPage: React.FC = () => {
                               <ArrowRight className="w-3.5 h-3.5" />
                             </Button>
                           ) : (
-                            <span className="text-xs text-[#2563EB] font-semibold bg-[#EFF6FF] px-3 py-1.5 rounded-xl border border-[#D6E4F5]">
-                              Payment reference under underwriting verification
+                            <span className="text-xs text-[#2563EB] font-bold bg-[#EFF6FF] px-3 py-1.5 rounded-xl border border-[#D6E4F5] flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-[#2563EB]" />
+                              <span>✓ UTR Submitted • Pending Verification</span>
                             </span>
                           )}
                         </div>
@@ -664,7 +687,7 @@ export const CustomerPaymentPage: React.FC = () => {
                 <span className="text-xs font-semibold text-[#64748B]">Active Settlement Rail</span>
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-[#0F2A5F]">
-                {feeName || 'Application Processing Fee'}
+                {feeName ? `${feeName.toUpperCase()} PAYMENT` : 'APPLICATION PROCESSING FEE PAYMENT'}
               </h2>
               <p className="text-xs text-[#64748B]">
                 {activeSpecificCharge?.remark || 'Official Application Processing Fee'}
@@ -685,7 +708,7 @@ export const CustomerPaymentPage: React.FC = () => {
                 size="sm"
                 onClick={() => {
                   const chargesEl = document.getElementById('assigned-charges-section');
-                  if (chargesEl) chargesEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  if (chargesEl) chargesEl?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
                 }}
                 className="h-10 px-4 border-[#D6E4F5] text-[#0F172A] hover:bg-white text-xs font-bold rounded-xl bg-white shadow-xs self-start sm:self-auto"
               >
@@ -981,67 +1004,103 @@ export const CustomerPaymentPage: React.FC = () => {
               </div>
             )}
 
-            {/* ── STEP 2: PAYMENT COMPLETED? (INLINE UTR FORM) ───────────── */}
-            <div className="bg-[#F7FAFF] p-6 sm:p-7 rounded-3xl border-2 border-[#D6E4F5] shadow-xs space-y-4">
-              <div className="border-b border-[#D6E4F5] pb-3">
-                <span className="text-[10px] font-bold text-[#2563EB] uppercase tracking-wider block mb-1">
-                  PAYMENT SETTLEMENT VERIFICATION
-                </span>
-                <h3 className="text-base sm:text-lg font-black text-[#0F2A5F]">
-                  PAYMENT COMPLETED?
-                </h3>
-                <p className="text-xs text-[#64748B] mt-0.5">
-                  After completing payment through the instructions above, enter your 12-digit UTR / Transaction Reference to initiate underwriting verification for <strong>{feeName}</strong> (₹{fee.toLocaleString('en-IN')}).
-                </p>
-              </div>
-
-              <form onSubmit={handleSubmitUtr} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label htmlFor="utr-ref-input" className="block text-[11px] font-bold text-[#0F172A] uppercase tracking-wider">
-                    Enter UTR / Transaction Reference *
-                  </label>
-                  <Input
-                    id="utr-ref-input"
-                    value={utrNumber}
-                    onChange={(e) => setUtrNumber(e.target.value)}
-                    placeholder="e.g. 428910482910"
-                    className="bg-white border-[#D6E4F5] text-[#0F172A] font-mono text-base h-12 rounded-xl focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10"
-                    required
-                  />
+            {/* ── STEP 2: ACTION TO CONFIRM PAYMENT COMPLETED ───────────── */}
+            {!hasCompletedPayment ? (
+              <div className="bg-[#EFF6FF] p-6 sm:p-7 rounded-3xl border-2 border-[#D6E4F5] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-[#2563EB] uppercase tracking-wider block">
+                    STEP 2: PAYMENT CONFIRMATION
+                  </span>
+                  <h3 className="text-base sm:text-lg font-bold text-[#0F2A5F]">
+                    Have you completed the payment transfer?
+                  </h3>
+                  <p className="text-xs text-[#64748B] max-w-xl">
+                    Once you have successfully transferred ₹{(fee || options?.feeAmount || 0).toLocaleString('en-IN')} using the banking instructions above, click below to enter your official 12-digit UTR transaction reference.
+                  </p>
                 </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 pt-1">
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting || !utrNumber.trim()}
-                    className="flex-1 h-12 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition active:scale-[0.99] disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Submitting Payment...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Submit Payment</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </Button>
+                <Button
+                  type="button"
+                  onClick={() => setHasCompletedPayment(true)}
+                  className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs h-11 px-6 rounded-xl shadow-xs shrink-0 flex items-center gap-2 cursor-pointer transition active:scale-[0.98]"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>I Have Completed Payment</span>
+                </Button>
+              </div>
+            ) : (
+              /* ── STEP 3: PAYMENT COMPLETED (INLINE UTR FORM) ───────────── */
+              <div id="utr-verification-section" className="bg-[#F7FAFF] p-6 sm:p-7 rounded-3xl border-2 border-[#2563EB]/40 shadow-xs space-y-4 animate-in fade-in duration-200">
+                <div className="border-b border-[#D6E4F5] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-bold text-[#16A34A] uppercase tracking-wider block mb-1">
+                      ✓ PAYMENT COMPLETED
+                    </span>
+                    <h3 className="text-base sm:text-lg font-black text-[#0F2A5F]">
+                      PAYMENT COMPLETED?
+                    </h3>
+                    <p className="text-xs text-[#64748B] mt-0.5">
+                      Enter the UTR / Transaction Reference Number from your payment receipt for <strong>{feeName}</strong> (₹{fee.toLocaleString('en-IN')}).
+                    </p>
+                  </div>
                   <Button
                     type="button"
-                    variant="outline"
-                    onClick={() => {
-                      const chargesEl = document.getElementById('assigned-charges-section');
-                      if (chargesEl) chargesEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }}
-                    className="h-12 px-5 border-[#D6E4F5] text-[#64748B] hover:bg-white text-xs font-semibold rounded-xl bg-white"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setHasCompletedPayment(false)}
+                    className="text-xs text-[#64748B] hover:text-[#0F172A] self-start sm:self-auto h-8 px-2"
                   >
-                    Back to Charges
+                    Change Method
                   </Button>
                 </div>
-              </form>
-            </div>
+
+                <form onSubmit={handleSubmitUtr} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label htmlFor="utr-ref-input" className="block text-[11px] font-bold text-[#0F172A] uppercase tracking-wider">
+                      UTR Number *
+                    </label>
+                    <Input
+                      id="utr-ref-input"
+                      value={utrNumber}
+                      onChange={(e) => setUtrNumber(e.target.value)}
+                      placeholder="e.g. 428910482910"
+                      className="bg-white border-[#D6E4F5] text-[#0F172A] font-mono text-base h-12 rounded-xl focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10"
+                      required
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                    <Button
+                      type="submit"
+                      disabled={isSubmitting || !utrNumber.trim()}
+                      className="flex-1 h-12 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition active:scale-[0.99] disabled:opacity-50"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Submitting UTR...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Submit UTR</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        const chargesEl = document.getElementById('assigned-charges-section');
+                        if (chargesEl) chargesEl?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+                      }}
+                      className="h-12 px-5 border-[#D6E4F5] text-[#64748B] hover:bg-white text-xs font-semibold rounded-xl bg-white"
+                    >
+                      Back to Charges
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
           </div>
         </div>
       )}

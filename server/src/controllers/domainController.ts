@@ -73,12 +73,66 @@ export class DomainController {
   async deleteDomain(req: Request, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
+      const domain = await prisma.domain.findUnique({
+        where: { id },
+        include: { _count: { select: { customers: true, loans: true } } },
+      });
+
+      if (!domain) {
+        return res.status(404).json({ success: false, message: 'Domain not found' });
+      }
+
+      if (domain._count.customers > 0 || domain._count.loans > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot delete domain '${domain.domainName}' because it has ${domain._count.customers} associated customer(s) and ${domain._count.loans} loan(s). Please deactivate it instead.`,
+        });
+      }
+
       await prisma.domain.delete({ where: { id } });
-      res.json({ success: true, message: 'Domain deleted successfully' });
+      res.json({ success: true, message: `Domain '${domain.domainName}' deleted successfully.` });
     } catch (err) {
       next(err);
     }
   }
+
+  async bulkDeleteDomains(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, message: 'ids array is required' });
+      }
+
+      const domains = await prisma.domain.findMany({
+        where: { id: { in: ids } },
+        include: { _count: { select: { customers: true, loans: true } } },
+      });
+
+      const safeToDelete = domains
+        .filter((d) => d._count.customers === 0 && d._count.loans === 0)
+        .map((d) => d.id);
+
+      if (safeToDelete.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'None of the selected domains can be deleted because all have active customers or loans associated with them.',
+        });
+      }
+
+      const result = await prisma.domain.deleteMany({
+        where: { id: { in: safeToDelete } },
+      });
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.count} domain(s). ${domains.length - safeToDelete.length > 0 ? `${domains.length - safeToDelete.length} domain(s) skipped due to foreign key relationships.` : ''}`,
+        count: result.count,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
 
   /**
    * Public domain resolver for multi-tenant branding:

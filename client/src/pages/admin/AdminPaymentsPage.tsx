@@ -23,7 +23,13 @@ import {
   ChevronRight,
   Eye,
   Loader2,
+  Trash2,
 } from 'lucide-react';
+import { DataManagementModal, ManagementActionType } from '@/components/admin/DataManagementModal';
+import { BulkActionBar } from '@/components/admin/BulkActionBar';
+import { API_ENDPOINTS } from '@/api/endpoints';
+import { apiClient } from '@/api/client';
+
 
 interface PaymentItem {
   id: string;
@@ -78,6 +84,99 @@ export const AdminPaymentsPage: React.FC = () => {
   const [adminNotes, setAdminNotes] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Batch selection state & DataManagementModal state
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState<string[]>([]);
+  const [mgmtModalState, setMgmtModalState] = useState<{
+    isOpen: boolean;
+    actionType: ManagementActionType;
+    title: string;
+    description: string;
+    itemCount: number;
+    itemNames: string[];
+    warningMessage?: string;
+    requireTypedConfirmation?: boolean;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    actionType: 'DELETE',
+    title: '',
+    description: '',
+    itemCount: 0,
+    itemNames: [],
+    onConfirm: async () => {},
+  });
+
+  const handleBulkArchive = () => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'ARCHIVE',
+      title: 'Bulk Archive Payments',
+      description: `Archive ${selectedPaymentIds.length} selected payment record(s).`,
+      itemCount: selectedPaymentIds.length,
+      itemNames: selectedPaymentIds.slice(0, 5),
+      warningMessage: 'Archiving soft-deactivates selected payment submissions while retaining audit records.',
+      onConfirm: async () => {
+        await apiClient.post(API_ENDPOINTS.PAYMENTS.BULK_ARCHIVE, { paymentIds: selectedPaymentIds });
+        queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+        setSelectedPaymentIds([]);
+      },
+    });
+  };
+
+  const handleBulkRestore = () => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'RESTORE',
+      title: 'Bulk Restore Payments',
+      description: `Restore ${selectedPaymentIds.length} selected payment record(s) back into active verification queue.`,
+      itemCount: selectedPaymentIds.length,
+      itemNames: selectedPaymentIds.slice(0, 5),
+      onConfirm: async () => {
+        await apiClient.post(API_ENDPOINTS.PAYMENTS.BULK_RESTORE, { paymentIds: selectedPaymentIds });
+        queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+        setSelectedPaymentIds([]);
+      },
+    });
+  };
+
+  const handleBulkDelete = () => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: 'Permanently Delete Selected Payments',
+      description: `Attempt permanent deletion of ${selectedPaymentIds.length} selected payment record(s).`,
+      itemCount: selectedPaymentIds.length,
+      itemNames: selectedPaymentIds.slice(0, 5),
+      requireTypedConfirmation: true,
+      warningMessage: 'CRITICAL FINANCIAL RULE: Verified, Paid, or Invoice-linked payments CANNOT be raw deleted due to database foreign-key safety. Audit protection will soft-archive/reject them instead.',
+      onConfirm: async () => {
+        await apiClient.post(API_ENDPOINTS.PAYMENTS.BULK_DELETE, { paymentIds: selectedPaymentIds });
+        queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+        setSelectedPaymentIds([]);
+      },
+    });
+  };
+
+  const handleSingleDelete = (p: PaymentItem) => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: `Delete Payment: UTR ${p.utr}`,
+      description: `Delete payment record of ₹${p.amount.toLocaleString('en-IN')} submitted by ${p.customerName}.`,
+      itemCount: 1,
+      itemNames: [`UTR: ${p.utr} - ₹${p.amount.toLocaleString('en-IN')} (${p.customerName})`],
+      requireTypedConfirmation: true,
+      warningMessage: ['PAID', 'VERIFIED', 'SUCCESS'].includes((p.status || '').toUpperCase())
+        ? 'NOTE: This payment is marked VERIFIED/PAID. Foreign-key safety rules block raw SQL deletion and will soft-archive/reject the payment instead.'
+        : 'This action will remove unverified payment entry.',
+      onConfirm: async () => {
+        await apiClient.delete(API_ENDPOINTS.PAYMENTS.DELETE(p.id));
+        queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+      },
+    });
+  };
+
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['admin-payments', page, statusFilter, search],
@@ -198,6 +297,19 @@ export const AdminPaymentsPage: React.FC = () => {
         </Button>
       </div>
 
+      {/* Bulk Action Sticky Bar */}
+      <BulkActionBar
+        selectedCount={selectedPaymentIds.length}
+        totalCount={payments.length}
+        onClearSelection={() => setSelectedPaymentIds([])}
+        onArchiveSelected={handleBulkArchive}
+        archiveLabel="Archive Selected"
+        onRestoreSelected={handleBulkRestore}
+        restoreLabel="Restore Selected"
+        onDeleteSelected={handleBulkDelete}
+        deleteLabel="Delete Selected"
+      />
+
       {/* Filter Tabs & Search Bar */}
       <Card className="bg-surface-elevated border border-border shadow-sm">
         <div className="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -245,6 +357,20 @@ export const AdminPaymentsPage: React.FC = () => {
           <table className="w-full text-left text-xs text-text-secondary">
             <thead className="bg-surface text-text-secondary uppercase tracking-wider text-[10px] font-bold border-b border-border">
               <tr>
+                <th className="px-3 py-3 text-center w-10">
+                  <input
+                    type="checkbox"
+                    checked={payments.length > 0 && payments.every((p) => selectedPaymentIds.includes(p.id))}
+                    onChange={() => {
+                      if (payments.every((p) => selectedPaymentIds.includes(p.id))) {
+                        setSelectedPaymentIds([]);
+                      } else {
+                        setSelectedPaymentIds(payments.map((p) => p.id));
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                  />
+                </th>
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Application</th>
                 <th className="px-4 py-3">Charge</th>
@@ -255,7 +381,7 @@ export const AdminPaymentsPage: React.FC = () => {
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1D3047]/60">
+            <tbody className="divide-y divide-border">
               {isLoading ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-xs text-text-secondary">
@@ -272,6 +398,18 @@ export const AdminPaymentsPage: React.FC = () => {
               ) : (
                 payments.map((p) => (
                   <tr key={p.id} className="hover:bg-surface-elevated hover:brightness-110/50 transition-colors">
+                    <td className="px-3 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedPaymentIds.includes(p.id)}
+                        onChange={() => {
+                          setSelectedPaymentIds((prev) =>
+                            prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                          );
+                        }}
+                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div>
                         <p className="font-semibold text-text-primary">{p.customerName || 'Borrower'}</p>
@@ -332,7 +470,7 @@ export const AdminPaymentsPage: React.FC = () => {
                                 setModalMode('VERIFY');
                                 setActionError(null);
                               }}
-                              className="h-7 px-2.5 text-xs bg-success/15 text-success hover:bg-success hover:text-[#07111F] border border-success/30 font-semibold"
+                              className="h-7 px-2.5 text-xs bg-success/15 text-success hover:bg-success hover:text-black border border-success/30 font-semibold"
                             >
                               Verify
                             </Button>
@@ -343,12 +481,22 @@ export const AdminPaymentsPage: React.FC = () => {
                                 setModalMode('REJECT');
                                 setActionError(null);
                               }}
-                              className="h-7 px-2.5 text-xs bg-danger/15 text-danger hover:bg-[#FF5C70] hover:text-text-primary border border-danger/30 font-semibold"
+                              className="h-7 px-2.5 text-xs bg-danger/15 text-danger hover:bg-danger hover:text-white border border-danger/30 font-semibold"
                             >
                               Reject
                             </Button>
                           </>
                         )}
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleSingleDelete(p)}
+                          className="h-7 px-2 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                          title="Delete or Archive Payment"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -536,9 +684,24 @@ export const AdminPaymentsPage: React.FC = () => {
                 </div>
               )}
             </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        </DialogContent>
+      </Dialog>
       )}
+
+      {/* Safe Data Management System Confirmation Modal */}
+      <DataManagementModal
+        isOpen={mgmtModalState.isOpen}
+        onClose={() => setMgmtModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={mgmtModalState.onConfirm}
+        actionType={mgmtModalState.actionType}
+        title={mgmtModalState.title}
+        description={mgmtModalState.description}
+        itemCount={mgmtModalState.itemCount}
+        itemNames={mgmtModalState.itemNames}
+        warningMessage={mgmtModalState.warningMessage}
+        requireTypedConfirmation={mgmtModalState.requireTypedConfirmation}
+        confirmTextRequired="DELETE"
+      />
     </div>
   );
 };

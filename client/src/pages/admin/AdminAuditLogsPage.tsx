@@ -84,13 +84,21 @@ export const AdminAuditLogsPage: React.FC = () => {
             Immutable chronicle of all admin and customer security, financial, and state-transition events
           </p>
         </div>
-        <button
-          onClick={fetchLogs}
-          className="p-2 text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition self-start sm:self-auto"
-          title="Refresh"
-        >
-          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+      </div>
+
+      {/* Immutable Audit Compliance Banner */}
+      <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between font-medium shadow-2xs">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 rounded-lg bg-amber-500/10 text-amber-700 border border-amber-500/20 shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-bold text-amber-950 text-sm">Regulatory Compliance & Immutability Notice</h4>
+            <p className="text-amber-800/90 text-xs mt-0.5">
+              System audit logs are permanently retained and protected from administrative deletion to ensure full regulatory compliance, anti-fraud auditing, and forensic security integrity.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Filters Bar */}

@@ -337,4 +337,94 @@ export const loanApplicationController = {
       next(error);
     }
   },
+
+  async archiveApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw new AppError(401, 'Authentication required');
+      const id = getParamId(req);
+      const result = await loanApplicationService.archiveLoanApplication(id, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: 'Loan application archived / cancelled successfully',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async restoreApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw new AppError(401, 'Authentication required');
+      const id = getParamId(req);
+      const result = await loanApplicationService.restoreLoanApplication(id, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: 'Loan application restored to submitted state',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async deleteApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw new AppError(401, 'Authentication required');
+      const id = getParamId(req);
+      await loanApplicationService.deleteLoanApplication(id, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: 'Loan application deleted successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async bulkArchiveApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw new AppError(401, 'Authentication required');
+      const { loanIds } = req.body;
+      const result = await loanApplicationService.bulkArchiveApplications(loanIds, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: `Successfully archived ${result.archivedCount} loan applications`,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async bulkRestoreApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw new AppError(401, 'Authentication required');
+      const { loanIds } = req.body;
+      const result = await loanApplicationService.bulkRestoreApplications(loanIds, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: `Successfully restored ${result.restoredCount} loan applications`,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async bulkDeleteApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) throw new AppError(401, 'Authentication required');
+      const { loanIds } = req.body;
+      const result = await loanApplicationService.bulkDeleteApplications(loanIds, req.user, req.ip);
+      res.status(200).json({
+        success: true,
+        message: `Bulk delete completed: ${result.deletedCount} deleted, ${result.archivedCount} archived due to active financial history`,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
 };
+

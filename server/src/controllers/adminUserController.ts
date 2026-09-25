@@ -225,7 +225,7 @@ export class AdminUserController {
           newValue: {
             role: updated.role,
             isActive: updated.isActive,
-            permissionsCount: updateData.permissions ? JSON.parse(updated.permissions).length : undefined,
+            permissionsCount: updateData.permissions && updated.permissions ? JSON.parse(updated.permissions).length : undefined,
           },
           ipAddress: req.ip || req.socket.remoteAddress,
         });
@@ -233,7 +233,7 @@ export class AdminUserController {
 
       let parsedPerms: string[] = [];
       try {
-        parsedPerms = JSON.parse(updated.permissions);
+        parsedPerms = JSON.parse(updated.permissions || '[]');
       } catch {
         parsedPerms = [];
       }
@@ -250,6 +250,148 @@ export class AdminUserController {
       next(err);
     }
   }
+
+  async deleteUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      const actor = req.user!;
+      const id = req.params.id as string;
+
+      if (id === actor.id) {
+        throw new AppError(400, 'Security Violation: You cannot delete your own admin account.');
+      }
+
+      const targetUser = await prisma.adminUser.findUnique({ where: { id } });
+      if (!targetUser) {
+        throw new AppError(404, 'Admin user not found');
+      }
+
+      if (targetUser.role === 'SUPER_ADMIN' && actor.adminRole !== 'SUPER_ADMIN') {
+        throw new AppError(403, 'Permission Denied: Only a SUPER_ADMIN can delete another SUPER_ADMIN account.');
+      }
+
+      if (targetUser.role === 'SUPER_ADMIN') {
+        const superAdminCount = await prisma.adminUser.count({
+          where: { role: 'SUPER_ADMIN' },
+        });
+        if (superAdminCount <= 1) {
+          throw new AppError(400, 'Action Blocked: Cannot delete the sole remaining SUPER_ADMIN account in the system.');
+        }
+      }
+
+      await prisma.adminUser.delete({ where: { id } });
+
+      await auditService.record({
+        actorType: 'ADMIN',
+        actorId: actor.id,
+        actorName: actor.fullName,
+        action: 'ADMIN_DELETED',
+        entity: 'AdminUser',
+        entityId: id,
+        previousValue: { email: targetUser.email, role: targetUser.role },
+        ipAddress: req.ip || req.socket.remoteAddress,
+      });
+
+      res.json({ success: true, message: `Admin user ${targetUser.email} deleted successfully.` });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async bulkDeactivateUsers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const actor = req.user!;
+      const { userIds } = req.body;
+
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        throw new AppError(400, 'userIds must be a non-empty array');
+      }
+
+      // Filter out self and sole remaining super admin
+      const validIds = userIds.filter((id: string) => id !== actor.id);
+      if (validIds.length === 0) {
+        throw new AppError(400, 'Cannot deactivate your own account in bulk operation');
+      }
+
+      const result = await prisma.adminUser.updateMany({
+        where: {
+          id: { in: validIds },
+          role: { not: 'SUPER_ADMIN' }, // Safeguard SUPER_ADMINs from bulk deactivation
+        },
+        data: { isActive: false },
+      });
+
+      await auditService.record({
+        actorType: 'ADMIN',
+        actorId: actor.id,
+        actorName: actor.fullName,
+        action: 'ADMIN_BULK_DEACTIVATED',
+        entity: 'AdminUser',
+        entityId: 'BULK',
+        newValue: { count: result.count, requestedCount: userIds.length },
+        ipAddress: req.ip || req.socket.remoteAddress,
+      });
+
+      res.json({
+        success: true,
+        message: `Successfully deactivated ${result.count} admin user(s).`,
+        count: result.count,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async bulkDeleteUsers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const actor = req.user!;
+      const { userIds } = req.body;
+
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        throw new AppError(400, 'userIds must be a non-empty array');
+      }
+
+      // Safeguard self and SUPER_ADMIN accounts
+      const safeIds = userIds.filter((id: string) => id !== actor.id);
+
+      const targetUsers = await prisma.adminUser.findMany({
+        where: {
+          id: { in: safeIds },
+          role: { not: 'SUPER_ADMIN' }, // Prevent bulk deletion of super admins
+        },
+        select: { id: true },
+      });
+
+      const idsToDelete = targetUsers.map((u) => u.id);
+
+      if (idsToDelete.length === 0) {
+        throw new AppError(400, 'No valid or non-SuperAdmin users selected for deletion.');
+      }
+
+      const result = await prisma.adminUser.deleteMany({
+        where: { id: { in: idsToDelete } },
+      });
+
+      await auditService.record({
+        actorType: 'ADMIN',
+        actorId: actor.id,
+        actorName: actor.fullName,
+        action: 'ADMIN_BULK_DELETED',
+        entity: 'AdminUser',
+        entityId: 'BULK',
+        newValue: { deletedCount: result.count, requestedCount: userIds.length },
+        ipAddress: req.ip || req.socket.remoteAddress,
+      });
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.count} admin user(s).`,
+        count: result.count,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const adminUserController = new AdminUserController();
+

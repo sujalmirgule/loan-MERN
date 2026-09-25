@@ -44,40 +44,56 @@
   }
 
   .theme-admin {
-    --background: #F7FAFF;
+    /* Base Surfaces: Very Light Blue + White */
+    --background: #F4F8FF;
     --surface: #FFFFFF;
-    --surface-elevated: #EFF6FF;
-    
-    --primary: #2563EB;
-    --primary-light: #EFF6FF;
-    --primary-accent: #1D4ED8;
-    --secondary: #1D4ED8;
-    --soft-blue: #EFF6FF;
-    
-    --success: #16A34A;
-    --warning: #D97706;
-    --danger: #DC2626;
-    
-    --text-primary: #0F172A;
-    --text-secondary: #334155;
-    --text-muted: #64748B;
-    
-    --border: #D6E4F5;
-    --input: #FFFFFF;
-    --input-border: #D6E4F5;
-    --focus: #2563EB;
-    
+    --surface-elevated: #E8F1FF;
     --card: #FFFFFF;
-    --card-foreground: #0F172A;
+    --card-foreground: #0B1220;
+    --card-elevated: #FFFFFF;
+
+    /* Loan Approve Blue/Navy Identity */
+    --primary: #155EEF;
+    --primary-light: #E8F1FF;
+    --primary-accent: #3B82F6;
+    --navy-primary: #07152F;
+    --navy-secondary: #0B2147;
+    --blue-deep: #123B8E;
+
+    /* Gold Brand Accent (Secondary highlight only) */
+    --gold-primary: #C9A227;
+    --gold-bright: #D4AF37;
+    --gold-muted: #A88932;
+    --gold-soft: #E0C766;
+    --gold-bg: #FEF9E7;
+    --gold-border: #E6CF7A;
+
+    /* Semantic Status Colors */
+    --success: #16A34A;
+    --warning: #F59E0B;
+    --danger: #DC2626;
+    --info: #3B82F6;
+
+    /* High-Contrast Typography */
+    --text-primary: #0B1220;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+
+    /* Structural Borders & Controls */
+    --border: #D7E3F5;
+    --input: #FFFFFF;
+    --input-border: #CBDDE9;
+    --focus: #155EEF;
+
     --popover: #FFFFFF;
-    --popover-foreground: #0F172A;
-    --muted: #EFF6FF;
-    --muted-foreground: #475569;
-    --accent: #EFF6FF;
-    --accent-foreground: #2563EB;
+    --popover-foreground: #0B1220;
+    --muted: #E8F1FF;
+    --muted-foreground: #64748B;
+    --accent: #E8F1FF;
+    --accent-foreground: #155EEF;
     --destructive: #DC2626;
     --destructive-foreground: #FFFFFF;
-    --ring: #2563EB;
+    --ring: #155EEF;
   }
 
   .theme-customer {

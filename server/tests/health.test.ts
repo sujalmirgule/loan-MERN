@@ -12,7 +12,8 @@ describe('API Health Check Endpoint', () => {
     expect(response.body).toHaveProperty('timestamp');
     expect(response.body).toHaveProperty('database');
     expect(response.body.database).toHaveProperty('status', 'ok');
-    expect(response.body.database).toHaveProperty('type', 'SQLite');
+    expect(response.body.database).toHaveProperty('type');
+    expect(['MySQL', 'SQLite']).toContain(response.body.database.type);
   });
 
   it('GET /api/nonexistent-route should return 404 with standard error format', async () => {

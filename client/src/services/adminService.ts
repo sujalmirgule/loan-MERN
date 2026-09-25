@@ -42,11 +42,20 @@ export interface DashboardResponse {
 export const adminService = {
   // --- Dashboard ---
   getDashboard: async (params?: Record<string, string | number | boolean | undefined>) => {
-    const res = await apiClient<{ success: boolean; data: DashboardResponse }>(API_ENDPOINTS.DASHBOARD.ADMIN, {
+    const res = await apiClient<any>(API_ENDPOINTS.DASHBOARD.ADMIN, {
       tokenType: 'admin',
       params,
     });
-    return res.data;
+    if (res?.data?.kpis) {
+      return res.data as DashboardResponse;
+    }
+    if (res?.kpis) {
+      return res as DashboardResponse;
+    }
+    if (res?.data?.data?.kpis) {
+      return res.data.data as DashboardResponse;
+    }
+    return (res?.data || res || {}) as DashboardResponse;
   },
 
   // --- Customers ---

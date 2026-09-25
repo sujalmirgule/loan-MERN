@@ -20,7 +20,11 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  Trash2,
 } from 'lucide-react';
+import { DataManagementModal, ManagementActionType } from '@/components/admin/DataManagementModal';
+import { BulkActionBar } from '@/components/admin/BulkActionBar';
+
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,9 +81,32 @@ export const AdminUsersPage: React.FC = () => {
   // Collapsed module groups inside modal
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
+  // Selection & Safe Data Management Modal State
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [mgmtModalState, setMgmtModalState] = useState<{
+    isOpen: boolean;
+    actionType: ManagementActionType;
+    title: string;
+    description: string;
+    itemCount: number;
+    itemNames: string[];
+    warningMessage?: string;
+    requireTypedConfirmation?: boolean;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    actionType: 'DELETE',
+    title: '',
+    description: '',
+    itemCount: 0,
+    itemNames: [],
+    onConfirm: async () => {},
+  });
+
   // Messages
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
 
   // Fetch users list
   const { data: users = [], isLoading, refetch } = useQuery<AdminUserRecord[]>({
@@ -262,6 +289,70 @@ export const AdminUsersPage: React.FC = () => {
     },
   });
 
+  // Handlers for Safe User Management & Deletion
+  const handleBulkDeactivate = () => {
+    const selectedUsers = users.filter((u) => selectedUserIds.includes(u.id));
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DEACTIVATE',
+      title: 'Bulk Deactivate Admin Users',
+      description: `Deactivate administrative access for ${selectedUserIds.length} selected user(s).`,
+      itemCount: selectedUserIds.length,
+      itemNames: selectedUsers.map((u) => `${u.fullName} (${u.email})`).slice(0, 5),
+      warningMessage: 'Deactivated users will lose dashboard login access immediately. Super Admin accounts are safeguarded from bulk deactivation.',
+      onConfirm: async () => {
+        const res = await api.post(API_ENDPOINTS.ADMIN_USERS.BULK_DEACTIVATE, { userIds: selectedUserIds });
+        setSuccessMsg(res.data?.message || `Successfully deactivated admin users.`);
+        setSelectedUserIds([]);
+        queryClient.invalidateQueries({ queryKey: ['adminUsersList'] });
+        refetch();
+      },
+    });
+  };
+
+  const handleBulkDelete = () => {
+    const selectedUsers = users.filter((u) => selectedUserIds.includes(u.id));
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: 'Permanently Delete Selected Admin Users',
+      description: `Permanently delete ${selectedUserIds.length} selected admin user account(s).`,
+      itemCount: selectedUserIds.length,
+      itemNames: selectedUsers.map((u) => `${u.fullName} (${u.email})`).slice(0, 5),
+      requireTypedConfirmation: true,
+      warningMessage: 'SECURITY SAFEGUARD: You cannot delete your own active session account or Super Admin accounts in bulk operations.',
+      onConfirm: async () => {
+        const res = await api.post(API_ENDPOINTS.ADMIN_USERS.BULK_DELETE, { userIds: selectedUserIds });
+        setSuccessMsg(res.data?.message || `Successfully deleted admin users.`);
+        setSelectedUserIds([]);
+        queryClient.invalidateQueries({ queryKey: ['adminUsersList'] });
+        refetch();
+      },
+    });
+  };
+
+  const handleSingleDelete = (targetUser: AdminUserRecord) => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: `Delete Admin User: ${targetUser.fullName}`,
+      description: `Permanently delete admin user account ${targetUser.fullName} (${targetUser.email}).`,
+      itemCount: 1,
+      itemNames: [`${targetUser.fullName} (${targetUser.email}) - ${targetUser.role}`],
+      requireTypedConfirmation: true,
+      warningMessage: targetUser.role === 'SUPER_ADMIN'
+        ? 'WARNING: You are requesting deletion of a SUPER_ADMIN account. The sole remaining SUPER_ADMIN cannot be deleted.'
+        : 'This action is permanent and removes admin credentials.',
+      onConfirm: async () => {
+        const res = await api.delete(API_ENDPOINTS.ADMIN_USERS.DELETE(targetUser.id));
+        setSuccessMsg(res.data?.message || `Admin user ${targetUser.fullName} deleted successfully.`);
+        queryClient.invalidateQueries({ queryKey: ['adminUsersList'] });
+        refetch();
+      },
+    });
+  };
+
+
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser && !formData.password.trim()) {
@@ -365,6 +456,17 @@ export const AdminUsersPage: React.FC = () => {
         </Card>
       </div>
 
+      {/* Bulk Action Sticky Bar */}
+      <BulkActionBar
+        selectedCount={selectedUserIds.length}
+        totalCount={filteredUsers.length}
+        onClearSelection={() => setSelectedUserIds([])}
+        onArchiveSelected={handleBulkDeactivate}
+        archiveLabel="Deactivate Selected"
+        onDeleteSelected={handleBulkDelete}
+        deleteLabel="Delete Selected"
+      />
+
       {/* Users Table Card */}
       <Card className="bg-surface border-border rounded-2xl shadow-xl overflow-hidden">
         {/* Table Header & Search Filter */}
@@ -404,6 +506,20 @@ export const AdminUsersPage: React.FC = () => {
           <table className="w-full text-left text-xs text-text-secondary">
             <thead className="bg-surface-elevated/80 text-[10px] uppercase tracking-wider text-text-secondary font-bold border-b border-border">
               <tr>
+                <th className="py-3 px-3 text-center w-10">
+                  <input
+                    type="checkbox"
+                    checked={filteredUsers.length > 0 && filteredUsers.every((u) => selectedUserIds.includes(u.id))}
+                    onChange={() => {
+                      if (filteredUsers.every((u) => selectedUserIds.includes(u.id))) {
+                        setSelectedUserIds([]);
+                      } else {
+                        setSelectedUserIds(filteredUsers.map((u) => u.id));
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                  />
+                </th>
                 <th className="py-3 px-4">User Details</th>
                 <th className="py-3 px-4">Role Preset</th>
                 <th className="py-3 px-4">Granular Permissions</th>
@@ -427,6 +543,21 @@ export const AdminUsersPage: React.FC = () => {
 
                   return (
                     <tr key={u.id} className="hover:bg-surface-elevated/40 transition">
+                      <td className="py-3.5 px-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedUserIds.includes(u.id)}
+                          disabled={isCurrentSelf || isUserSuperAdmin}
+                          onChange={() => {
+                            setSelectedUserIds((prev) =>
+                              prev.includes(u.id) ? prev.filter((id) => id !== u.id) : [...prev, u.id]
+                            );
+                          }}
+                          className={`w-4 h-4 rounded border-border text-primary focus:ring-primary ${
+                            isCurrentSelf || isUserSuperAdmin ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'
+                          }`}
+                        />
+                      </td>
                       {/* Name & Email */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center space-x-3">
@@ -555,6 +686,17 @@ export const AdminUsersPage: React.FC = () => {
                               <Unlock className="w-3 h-3" />
                             </Button>
                           )}
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSingleDelete(u)}
+                            disabled={isCurrentSelf || (!isSuperAdmin && isUserSuperAdmin)}
+                            title="Delete Admin User"
+                            className="bg-danger/10 border-red-500/20 text-danger hover:bg-danger/20 h-7 px-2 text-[11px] rounded-lg"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -889,6 +1031,20 @@ export const AdminUsersPage: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Safe Data Management System Confirmation Modal */}
+      <DataManagementModal
+        isOpen={mgmtModalState.isOpen}
+        onClose={() => setMgmtModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={mgmtModalState.onConfirm}
+        actionType={mgmtModalState.actionType}
+        title={mgmtModalState.title}
+        description={mgmtModalState.description}
+        itemCount={mgmtModalState.itemCount}
+        itemNames={mgmtModalState.itemNames}
+        warningMessage={mgmtModalState.warningMessage}
+        requireTypedConfirmation={mgmtModalState.requireTypedConfirmation}
+        confirmTextRequired="DELETE"
+      />
     </div>
   );
 };

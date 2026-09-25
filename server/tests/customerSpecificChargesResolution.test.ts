@@ -22,15 +22,15 @@ describe('Customer-Specific Charges Resolution & Validation Suite', () => {
     // Clean up previous test artifacts
     await prisma.whatsAppMessage.deleteMany({});
     await prisma.emailMessage.deleteMany({});
-    await prisma.eMISchedule.deleteMany({});
-    await prisma.loanAgreement.deleteMany({});
-    await prisma.documentRequest.deleteMany({});
-    await prisma.disbursement.deleteMany({});
     await prisma.invoice.deleteMany({});
-    await prisma.notification.deleteMany({});
     await prisma.payment.deleteMany({});
     await prisma.charge.deleteMany({});
+    await prisma.disbursement.deleteMany({});
+    await prisma.eMISchedule.deleteMany({});
+    await prisma.loanAgreement.deleteMany({});
     await prisma.loanDocument.deleteMany({});
+    await prisma.documentRequest.deleteMany({});
+    await prisma.notification.deleteMany({});
     await prisma.loanApplication.deleteMany({});
     await prisma.customer.deleteMany({
       where: { mobile: { in: [noLoanCustMobile, withLoanCustMobile] } },
@@ -113,15 +113,15 @@ describe('Customer-Specific Charges Resolution & Validation Suite', () => {
   afterAll(async () => {
     await prisma.whatsAppMessage.deleteMany({});
     await prisma.emailMessage.deleteMany({});
-    await prisma.eMISchedule.deleteMany({});
-    await prisma.loanAgreement.deleteMany({});
-    await prisma.documentRequest.deleteMany({});
-    await prisma.disbursement.deleteMany({});
     await prisma.invoice.deleteMany({});
-    await prisma.notification.deleteMany({});
     await prisma.payment.deleteMany({});
     await prisma.charge.deleteMany({});
+    await prisma.disbursement.deleteMany({});
+    await prisma.eMISchedule.deleteMany({});
+    await prisma.loanAgreement.deleteMany({});
     await prisma.loanDocument.deleteMany({});
+    await prisma.documentRequest.deleteMany({});
+    await prisma.notification.deleteMany({});
     await prisma.loanApplication.deleteMany({});
     await prisma.customer.deleteMany({
       where: { mobile: { in: [noLoanCustMobile, withLoanCustMobile] } },

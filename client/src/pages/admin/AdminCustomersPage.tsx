@@ -42,7 +42,11 @@ import {
   UserCheck,
   Mail,
   CheckSquare,
+  Trash2,
 } from 'lucide-react';
+import { DataManagementModal, ManagementActionType } from '@/components/admin/DataManagementModal';
+import { BulkActionBar } from '@/components/admin/BulkActionBar';
+
 
 interface CustomerRecord {
   id: string;
@@ -189,8 +193,30 @@ export const AdminCustomersPage: React.FC = () => {
   const [isExportingCsv, setIsExportingCsv] = useState(false);
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
 
+  // Safe Data Management Modal state
+  const [mgmtModalState, setMgmtModalState] = useState<{
+    isOpen: boolean;
+    actionType: ManagementActionType;
+    title: string;
+    description: string;
+    itemCount: number;
+    itemNames: string[];
+    warningMessage?: string;
+    requireTypedConfirmation?: boolean;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    actionType: 'DELETE',
+    title: '',
+    description: '',
+    itemCount: 0,
+    itemNames: [],
+    onConfirm: async () => {},
+  });
+
   // Global inline feedback message
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
 
   // Selection safety: Reset selection when search, filter, or page changes
   useEffect(() => {
@@ -520,6 +546,116 @@ export const AdminCustomersPage: React.FC = () => {
     }
   };
 
+  // Safe Bulk & Single Data Management Handlers
+  const handleBulkDeactivatePrompt = () => {
+    const selectedObjs = selectedCustomerIds
+      .map((id) => selectedCustomersMap[id] || customers.find((c) => c.id === id))
+      .filter(Boolean);
+    const names = selectedObjs.map((c) => c!.fullName);
+
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DEACTIVATE',
+      title: 'Bulk Deactivate Customers',
+      description: `Deactivate account access for ${selectedCustomerIds.length} selected customer(s). KYC, loans, and financial histories will be preserved for compliance.`,
+      itemCount: selectedCustomerIds.length,
+      itemNames: names.slice(0, 5),
+      warningMessage: 'Deactivating customer accounts will block their mobile app login while keeping financial compliance records intact.',
+      onConfirm: async () => {
+        const res = await apiClient.post(API_ENDPOINTS.CUSTOMERS.BULK_DEACTIVATE, {
+          customerIds: selectedCustomerIds,
+        });
+        setFeedback({
+          type: 'success',
+          message: res.message || `Successfully deactivated ${res.count || selectedCustomerIds.length} customer account(s).`,
+        });
+        setSelectedCustomerIds([]);
+        refetch();
+      },
+    });
+  };
+
+  const handleBulkReactivatePrompt = () => {
+    const selectedObjs = selectedCustomerIds
+      .map((id) => selectedCustomersMap[id] || customers.find((c) => c.id === id))
+      .filter(Boolean);
+    const names = selectedObjs.map((c) => c!.fullName);
+
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'REACTIVATE',
+      title: 'Bulk Reactivate Customers',
+      description: `Reactivate account access for ${selectedCustomerIds.length} selected customer(s).`,
+      itemCount: selectedCustomerIds.length,
+      itemNames: names.slice(0, 5),
+      warningMessage: 'Reactivating accounts will restore active login privileges and application submission capabilities.',
+      onConfirm: async () => {
+        const res = await apiClient.post(API_ENDPOINTS.CUSTOMERS.BULK_REACTIVATE, {
+          customerIds: selectedCustomerIds,
+        });
+        setFeedback({
+          type: 'success',
+          message: res.message || `Successfully reactivated ${res.count || selectedCustomerIds.length} customer account(s).`,
+        });
+        setSelectedCustomerIds([]);
+        refetch();
+      },
+    });
+  };
+
+  const handleBulkDeletePrompt = () => {
+    const selectedObjs = selectedCustomerIds
+      .map((id) => selectedCustomersMap[id] || customers.find((c) => c.id === id))
+      .filter(Boolean);
+    const names = selectedObjs.map((c) => c!.fullName);
+
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: 'Permanently Delete Selected Customers',
+      description: `Permanently delete ${selectedCustomerIds.length} selected customer record(s) from the system.`,
+      itemCount: selectedCustomerIds.length,
+      itemNames: names.slice(0, 5),
+      requireTypedConfirmation: true,
+      warningMessage: 'CRITICAL SECURITY NOTICE: Customers with active loans, approved applications, or verified payment histories CANNOT be permanently deleted due to database foreign-key constraints. Safe records will be removed; linked financial records will be soft-deactivated instead.',
+      onConfirm: async () => {
+        const res = await apiClient.post(API_ENDPOINTS.CUSTOMERS.BULK_DELETE, {
+          customerIds: selectedCustomerIds,
+        });
+        setFeedback({
+          type: 'success',
+          message: res.message || `Successfully processed bulk deletion of customer records.`,
+        });
+        setSelectedCustomerIds([]);
+        refetch();
+      },
+    });
+  };
+
+  const openDeleteModalForCustomer = (customer: CustomerRecord) => {
+    setMgmtModalState({
+      isOpen: true,
+      actionType: 'DELETE',
+      title: `Delete Customer Record: ${customer.fullName}`,
+      description: `Requesting permanent removal of customer profile and associated unlinked records for ${customer.fullName} (${customer.email}).`,
+      itemCount: 1,
+      itemNames: [`${customer.fullName} (${customer.email})`],
+      requireTypedConfirmation: true,
+      warningMessage: customer.latestLoan || customer.latestPayment
+        ? 'NOTE: This customer has associated loan or payment records. Foreign key safety rules will block raw SQL deletion and archive/soft-deactivate the customer profile instead.'
+        : 'This action is permanent and cannot be undone.',
+      onConfirm: async () => {
+        const res = await apiClient.delete(API_ENDPOINTS.CUSTOMERS.DELETE(customer.id));
+        setFeedback({
+          type: 'success',
+          message: res.message || `Customer record processing completed.`,
+        });
+        refetch();
+      },
+    });
+  };
+
+
   // Open WhatsApp History Modal
   const openWhatsAppHistory = async (customer: CustomerRecord) => {
     setSelectedCustomerForHistory(customer);
@@ -772,6 +908,19 @@ export const AdminCustomersPage: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* Bulk Action Floating Bar */}
+      <BulkActionBar
+        selectedCount={selectedCustomerIds.length}
+        totalCount={selectableCustomers.length}
+        onClearSelection={() => setSelectedCustomerIds([])}
+        onArchiveSelected={handleBulkDeactivatePrompt}
+        archiveLabel="Deactivate Selected"
+        onRestoreSelected={handleBulkReactivatePrompt}
+        restoreLabel="Reactivate Selected"
+        onDeleteSelected={handleBulkDeletePrompt}
+        deleteLabel="Delete Selected"
+      />
 
       {/* Main Container Card */}
       <Card className="bg-white border border-[#D6E4F5] shadow-xs">
@@ -1342,6 +1491,18 @@ export const AdminCustomersPage: React.FC = () => {
                                     Deactivate Account
                                   </button>
                                 )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    openDeleteModalForCustomer(c);
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 flex items-center gap-2 font-semibold border-t border-slate-100 mt-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                                  Delete Record
+                                </button>
                               </div>
                             )}
                           </div>
@@ -2061,6 +2222,21 @@ export const AdminCustomersPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Safe Data Management System Confirmation Modal */}
+      <DataManagementModal
+        isOpen={mgmtModalState.isOpen}
+        onClose={() => setMgmtModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={mgmtModalState.onConfirm}
+        actionType={mgmtModalState.actionType}
+        title={mgmtModalState.title}
+        description={mgmtModalState.description}
+        itemCount={mgmtModalState.itemCount}
+        itemNames={mgmtModalState.itemNames}
+        warningMessage={mgmtModalState.warningMessage}
+        requireTypedConfirmation={mgmtModalState.requireTypedConfirmation}
+        confirmTextRequired="DELETE"
+      />
     </div>
   );
 };

@@ -116,12 +116,12 @@ export function getWatermarkLayout(pageWidth: number, pageHeight: number, size =
 
 export interface ApprovalLetterData {
   customerName: string;
-  customerPhone?: string;
-  customerEmail?: string;
-  customerAddress?: string;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  customerAddress?: string | null;
   applicationNumber: string;
   loanAccountNumber: string;
-  approvalNumber?: string;
+  approvalNumber?: string | null;
   loanType: string;
   approvedAmount: number;
   interestRate: number;
@@ -129,25 +129,25 @@ export interface ApprovalLetterData {
   monthlyEmi: number;
   processingFee: number;
   approvalDate: Date | string;
-  disbursementDate?: Date | string;
-  panMasked?: string;
-  aadhaarMasked?: string;
-  accountHolderName?: string;
-  accountNumberMasked?: string;
-  bankIfsc?: string;
-  bankName?: string;
-  kycVerificationId?: string;
-  companyName?: string;
-  companyLegalName?: string;
-  companyEmail?: string;
-  companyPhone?: string;
-  companyAddress?: string;
-  companyWebsite?: string;
-  authorizedSignatoryName?: string;
-  authorizedSignatoryDesignation?: string;
-  authorizedSignatureUrl?: string;
-  companyStampUrl?: string;
-  verificationUrl?: string;
+  disbursementDate?: Date | string | null;
+  panMasked?: string | null;
+  aadhaarMasked?: string | null;
+  accountHolderName?: string | null;
+  accountNumberMasked?: string | null;
+  bankIfsc?: string | null;
+  bankName?: string | null;
+  kycVerificationId?: string | null;
+  companyName?: string | null;
+  companyLegalName?: string | null;
+  companyEmail?: string | null;
+  companyPhone?: string | null;
+  companyAddress?: string | null;
+  companyWebsite?: string | null;
+  authorizedSignatoryName?: string | null;
+  authorizedSignatoryDesignation?: string | null;
+  authorizedSignatureUrl?: string | null;
+  companyStampUrl?: string | null;
+  verificationUrl?: string | null;
   logoUrl?: string | null;
   secondaryLogoUrl?: string | null;
   approvalLetterHeaderUrl?: string | null;
@@ -168,7 +168,7 @@ export interface PaymentReceiptData {
   paymentType: string;
   status: string;
   paymentDate: Date | string;
-  companyName?: string;
+  companyName?: string | null;
 }
 
 export interface EmiSchedulePdfData {
@@ -186,40 +186,40 @@ export interface EmiSchedulePdfData {
     totalAmount: number;
     status: string;
   }>;
-  companyName?: string;
+  companyName?: string | null;
 }
 
 export interface InvoicePdfData {
   invoiceNumber: string;
   invoiceDate: Date | string;
   customerName: string;
-  customerMobile?: string;
-  customerEmail?: string;
-  customerAddress?: string;
+  customerMobile?: string | null;
+  customerEmail?: string | null;
+  customerAddress?: string | null;
   applicationNumber: string;
-  loanAccountNumber?: string;
-  chargeId?: string;
-  recordId?: string;
+  loanAccountNumber?: string | null;
+  chargeId?: string | null;
+  recordId?: string | null;
   chargeType: string;
-  chargeDescription?: string;
+  chargeDescription?: string | null;
   amount: number;
   taxAmount?: number;
   totalAmount?: number;
-  paymentMethod?: string;
-  paymentDate?: Date | string;
+  paymentMethod?: string | null;
+  paymentDate?: Date | string | null;
   paymentStatus: string;
-  transactionRef?: string;
-  remark?: string;
-  companyName?: string;
-  companyLegalName?: string;
-  companyAddress?: string;
-  companyEmail?: string;
-  companyPhone?: string;
-  companyWebsite?: string;
-  authorizedSignatoryName?: string;
-  authorizedSignatoryDesignation?: string;
-  authorizedSignatureUrl?: string;
-  companyStampUrl?: string;
+  transactionRef?: string | null;
+  remark?: string | null;
+  companyName?: string | null;
+  companyLegalName?: string | null;
+  companyAddress?: string | null;
+  companyEmail?: string | null;
+  companyPhone?: string | null;
+  companyWebsite?: string | null;
+  authorizedSignatoryName?: string | null;
+  authorizedSignatoryDesignation?: string | null;
+  authorizedSignatureUrl?: string | null;
+  companyStampUrl?: string | null;
   generatedDate?: Date | string;
   logoUrl?: string | null;
   watermarkLogoUrl?: string | null;
@@ -926,11 +926,11 @@ export class PdfService {
         // ==========================================
         const footerLeftX = margin + 10;
         doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#7f1d1d').text(company, footerLeftX, currentY);
-        doc.font('Helvetica').fontSize(6.5).fillColor('#475569').text(
-          'Computer-generated payment receipt. This document records the transaction\ndetails shown above and should be retained with your loan records.',
+        doc.font('Helvetica').fontSize(6).fillColor('#475569').text(
+          `${companyAddress}\nHelpline: ${companyPhone} | Email: ${companyEmail}\nComputer-generated payment receipt. Retain for official records.`,
           footerLeftX,
-          currentY + 12,
-          { width: 240, lineGap: 2 }
+          currentY + 11,
+          { width: 250, lineGap: 1.5 }
         );
 
         // Simulated Barcode Graphic

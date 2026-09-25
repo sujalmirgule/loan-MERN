@@ -1625,6 +1625,91 @@ export class SpecificChargesService {
       filename: `Invoice_${invoiceNum}.pdf`,
     };
   }
+
+  /**
+   * Safely delete a single charge if not paid and no verified payment exists.
+   */
+  async deleteCharge(chargeId: string, actor: AuthenticatedUser, ipAddress?: string) {
+    const charge = await this.getChargeById(chargeId);
+
+    if (charge.status === 'PAID') {
+      throw new AppError(400, 'Cannot permanently delete a charge marked as PAID.');
+    }
+
+    if (charge.paymentId) {
+      const linkedPayment = await prisma.payment.findUnique({ where: { id: charge.paymentId } });
+      if (linkedPayment && (linkedPayment.status === 'PAID' || linkedPayment.status === 'VERIFIED')) {
+        throw new AppError(400, 'Cannot delete charge linked to a verified payment.');
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.invoice.deleteMany({ where: { chargeId } });
+      if (charge.paymentId) {
+        await tx.payment.deleteMany({ where: { id: charge.paymentId } });
+      }
+      await tx.charge.delete({ where: { id: chargeId } });
+    });
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'CHARGE_DELETED',
+      entity: 'Charge',
+      entityId: chargeId,
+      newValue: { chargeId, name: charge.name, amount: charge.amount },
+      ipAddress,
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Bulk cancel charges.
+   */
+  async bulkCancelCharges(chargeIds: string[], actor: AuthenticatedUser, ipAddress?: string) {
+    if (!chargeIds || chargeIds.length === 0) throw new AppError(400, 'No charge IDs specified');
+
+    let cancelledCount = 0;
+    for (const id of chargeIds) {
+      try {
+        await this.cancelSpecificCharge(id, actor, ipAddress);
+        cancelledCount++;
+      } catch {
+        // Skip if already paid/cancelled
+      }
+    }
+
+    return { cancelledCount, total: chargeIds.length };
+  }
+
+  /**
+   * Bulk delete charges (FK Protected).
+   */
+  async bulkDeleteCharges(chargeIds: string[], actor: AuthenticatedUser, ipAddress?: string) {
+    if (!chargeIds || chargeIds.length === 0) throw new AppError(400, 'No charge IDs specified');
+
+    let deletedCount = 0;
+    let cancelledCount = 0;
+
+    for (const id of chargeIds) {
+      try {
+        await this.deleteCharge(id, actor, ipAddress);
+        deletedCount++;
+      } catch {
+        try {
+          await this.cancelSpecificCharge(id, actor, ipAddress);
+          cancelledCount++;
+        } catch {
+          // Skip if paid
+        }
+      }
+    }
+
+    return { deletedCount, cancelledCount, total: chargeIds.length };
+  }
 }
 
 export const specificChargesService = new SpecificChargesService();
+
