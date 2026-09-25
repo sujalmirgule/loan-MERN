@@ -8,6 +8,13 @@ export const updateProfileSchema = z.object({
     .min(3, 'Full name must be at least 3 characters')
     .max(100, 'Full name cannot exceed 100 characters')
     .regex(/^[a-zA-Z\s.'-]+$/, 'Name can only contain letters, spaces, dots, and hyphens'),
+  fatherName: z
+    .string()
+    .trim()
+    .max(100, 'Father / Guardian name cannot exceed 100 characters')
+    .optional()
+    .nullable()
+    .or(z.literal('')),
   email: z
     .string({ required_error: 'Email is required' })
     .trim()

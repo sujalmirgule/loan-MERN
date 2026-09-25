@@ -8,6 +8,12 @@ export const customerRegisterSchema = z
       .trim()
       .min(2, 'Full name must be at least 2 characters')
       .max(100, 'Full name cannot exceed 100 characters'),
+    fatherName: z
+      .string()
+      .trim()
+      .max(100, 'Father / Guardian name cannot exceed 100 characters')
+      .optional()
+      .or(z.literal('')),
     mobile: z
       .string({ required_error: 'Mobile number is required' })
       .trim()

@@ -26,6 +26,7 @@ export const customerProfileService = {
       id: customer.id,
       role: 'CUSTOMER',
       fullName: customer.fullName,
+      fatherName: customer.fatherName || null,
       mobile: customer.mobile,
       email: customer.email,
       address: customer.address,
@@ -63,6 +64,7 @@ export const customerProfileService = {
     // Build update payload
     const updateData: {
       fullName: string;
+      fatherName?: string | null;
       email: string;
       address: string;
       state: string;
@@ -72,6 +74,7 @@ export const customerProfileService = {
       aadhaarEncrypted?: string;
     } = {
       fullName: input.fullName,
+      ...(input.fatherName !== undefined ? { fatherName: input.fatherName ? input.fatherName.trim() : null } : {}),
       email: input.email,
       address: input.address,
       state: input.state,
@@ -131,6 +134,7 @@ export const customerProfileService = {
       id: updated.id,
       role: 'CUSTOMER',
       fullName: updated.fullName,
+      fatherName: updated.fatherName || null,
       mobile: updated.mobile,
       email: updated.email,
       address: updated.address,

@@ -119,6 +119,25 @@ describe('Customer Profile Management Suite', () => {
       expect(res.body.data.profile.mobile).toBe(customerMobile); // Mobile remained unchanged
     });
 
+    it('should successfully update fatherName in customer profile', async () => {
+      const res = await request(app)
+        .patch('/api/customer/profile')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          fullName: 'Updated Profile User',
+          fatherName: 'Ramesh Sharma',
+          email: 'updated.user@example.com',
+          address: '789 Indiranagar 100 Feet Rd',
+          state: 'Karnataka',
+          city: 'Bengaluru',
+          monthlyIncome: 75000,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.profile.fatherName).toBe('Ramesh Sharma');
+    });
+
     it('should securely update Aadhaar when provided and record audit log', async () => {
       const res = await request(app)
         .patch('/api/customer/profile')

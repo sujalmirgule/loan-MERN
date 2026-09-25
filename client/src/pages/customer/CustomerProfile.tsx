@@ -34,6 +34,12 @@ const profileFormSchema = z.object({
     .trim()
     .min(3, 'Full name must be at least 3 characters')
     .max(100, 'Full name cannot exceed 100 characters'),
+  fatherName: z
+    .string()
+    .trim()
+    .max(100, 'Father / Guardian name cannot exceed 100 characters')
+    .optional()
+    .or(z.literal('')),
   email: z
     .string()
     .trim()
@@ -70,6 +76,7 @@ type ProfileFormValues = z.infer<typeof profileFormSchema>;
 interface CustomerProfileData {
   id: string;
   fullName: string;
+  fatherName?: string | null;
   mobile: string;
   email: string;
   address: string;
@@ -119,6 +126,7 @@ export const CustomerProfile: React.FC = () => {
       setProfile(data);
       reset({
         fullName: data.fullName || '',
+        fatherName: data.fatherName || '',
         email: data.email,
         address: data.address,
         state: data.state,
@@ -154,6 +162,7 @@ export const CustomerProfile: React.FC = () => {
 
       const payload: Record<string, unknown> = {
         fullName: values.fullName,
+        fatherName: values.fatherName ? values.fatherName.trim() : '',
         email: values.email,
         address: values.address,
         state: values.state,
@@ -175,6 +184,7 @@ export const CustomerProfile: React.FC = () => {
       setIsEditing(false);
       reset({
         fullName: updated.fullName,
+        fatherName: updated.fatherName || '',
         email: updated.email,
         address: updated.address,
         state: updated.state,
@@ -196,6 +206,7 @@ export const CustomerProfile: React.FC = () => {
     if (profile) {
       reset({
         fullName: profile.fullName,
+        fatherName: profile.fatherName || '',
         email: profile.email,
         address: profile.address,
         state: profile.state,
@@ -327,6 +338,20 @@ export const CustomerProfile: React.FC = () => {
                 ) : (
                   <p className="text-sm font-medium text-slate-800 bg-slate-50 p-2.5 rounded-md border border-slate-200">
                     {profile.fullName}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="fatherName">Father / Guardian Name</Label>
+                {isEditing ? (
+                  <div>
+                    <Input id="fatherName" {...register('fatherName')} placeholder="Enter Father / Guardian Name" />
+                    {errors.fatherName && <p className="text-xs text-destructive mt-1">{errors.fatherName.message}</p>}
+                  </div>
+                ) : (
+                  <p className="text-sm font-medium text-slate-800 bg-slate-50 p-2.5 rounded-md border border-slate-200">
+                    {profile.fatherName || '—'}
                   </p>
                 )}
               </div>

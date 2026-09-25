@@ -12,6 +12,7 @@ export interface SafeCustomerUser {
   id: string;
   role: 'CUSTOMER';
   fullName: string;
+  fatherName?: string | null;
   mobile: string;
   email: string;
   address: string;
@@ -59,6 +60,7 @@ export const authService = {
     const customer = await prisma.customer.create({
       data: {
         fullName: input.fullName,
+        fatherName: input.fatherName?.trim() || null,
         mobile: input.mobile,
         email: input.email,
         address: input.address,
@@ -85,6 +87,7 @@ export const authService = {
       newValue: {
         id: customer.id,
         fullName: customer.fullName,
+        fatherName: customer.fatherName,
         mobile: customer.mobile,
         email: customer.email,
         state: customer.state,
@@ -100,6 +103,7 @@ export const authService = {
       id: customer.id,
       role: 'CUSTOMER',
       fullName: customer.fullName,
+      fatherName: customer.fatherName,
       mobile: customer.mobile,
       email: customer.email,
       address: customer.address,
@@ -150,6 +154,7 @@ export const authService = {
       id: customer.id,
       role: 'CUSTOMER',
       fullName: customer.fullName,
+      fatherName: customer.fatherName,
       mobile: customer.mobile,
       email: customer.email,
       address: customer.address,

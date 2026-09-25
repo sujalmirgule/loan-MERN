@@ -28,6 +28,12 @@ export const registerFormSchema = z.object({
     .trim()
     .min(2, 'Full name must be at least 2 characters')
     .max(100, 'Full name cannot exceed 100 characters'),
+  fatherName: z
+    .string()
+    .trim()
+    .max(100, 'Father / Guardian name cannot exceed 100 characters')
+    .optional()
+    .or(z.literal('')),
   mobile: z
     .string()
     .trim()
@@ -100,6 +106,7 @@ export const CustomerRegisterForm: React.FC<CustomerRegisterFormProps> = ({
     resolver: zodResolver(registerFormSchema),
     defaultValues: {
       fullName: '',
+      fatherName: '',
       mobile: '',
       email: '',
       address: '',
@@ -368,6 +375,19 @@ export const CustomerRegisterForm: React.FC<CustomerRegisterFormProps> = ({
                   className="h-11 bg-[#F7FAFC] border-[#D9E6F2] text-[#0B1F3A] rounded-xl text-sm"
                 />
                 {errors.fullName && <p className="text-[11px] text-red-600 font-semibold">{errors.fullName.message}</p>}
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="fatherName" className="text-xs font-bold text-[#0B1F3A]">
+                  Father / Guardian Name
+                </Label>
+                <Input
+                  id="fatherName"
+                  placeholder="e.g. Ramesh Kumar"
+                  {...register('fatherName')}
+                  className="h-11 bg-[#F7FAFC] border-[#D9E6F2] text-[#0B1F3A] rounded-xl text-sm"
+                />
+                {errors.fatherName && <p className="text-[11px] text-red-600 font-semibold">{errors.fatherName.message}</p>}
               </div>
 
               <div className="space-y-1.5">
