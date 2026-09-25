@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   IndianRupee,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { apiClient } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
@@ -101,6 +102,7 @@ export const AdminKycList: React.FC = () => {
   const canVerify = hasPermission('kyc.verify');
   const canReject = hasPermission('kyc.reject');
   const canCorrection = hasPermission('kyc.correction');
+  const canDelete = hasPermission('customers.delete');
 
   // Data & queue state
   const [customers, setCustomers] = useState<KycCustomerItem[]>([]);
@@ -123,6 +125,11 @@ export const AdminKycList: React.FC = () => {
 
   // Review Drawer / Modal state
   const [activeDrawerCustomer, setActiveDrawerCustomer] = useState<KycCustomerItem | null>(null);
+  // Ref to always hold the latest activeDrawerCustomer value so the polling
+  // interval in fetchKycList never closes over a stale reference.
+  const activeDrawerCustomerRef = React.useRef<KycCustomerItem | null>(null);
+  // Keep ref in sync with state on every render
+  activeDrawerCustomerRef.current = activeDrawerCustomer;
   const [viewDocsCustomer, setViewDocsCustomer] = useState<KycCustomerItem | null>(null);
 
   // Action Modals State
@@ -146,6 +153,10 @@ export const AdminKycList: React.FC = () => {
 
   const [isSubmittingAction, setIsSubmittingAction] = useState<boolean>(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Delete state
+  const [deleteCustomer, setDeleteCustomer] = useState<KycCustomerItem | null>(null);
+  const [isDeletingCustomer, setIsDeletingCustomer] = useState<boolean>(false);
 
   // Load distinct states
   useEffect(() => {
@@ -180,9 +191,14 @@ export const AdminKycList: React.FC = () => {
         setCounts(data.counts);
       }
 
-      // If drawer is open, refresh activeDrawerCustomer reference
-      if (activeDrawerCustomer) {
-        const updated = (data.customers || []).find((c: KycCustomerItem) => c.id === activeDrawerCustomer.id);
+      // If drawer is currently open, refresh its data reference.
+      // Use the ref (not state) so we always read the latest value without
+      // this callback needing activeDrawerCustomer as a dependency — which
+      // was the root cause of the close-button bug: a stale closure would
+      // see the pre-close non-null value and re-open the drawer.
+      const currentDrawer = activeDrawerCustomerRef.current;
+      if (currentDrawer) {
+        const updated = (data.customers || []).find((c: KycCustomerItem) => c.id === currentDrawer.id);
         if (updated) setActiveDrawerCustomer(updated);
       }
     } catch (err: unknown) {
@@ -194,7 +210,7 @@ export const AdminKycList: React.FC = () => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [activeTab, searchTerm, activeDrawerCustomer]);
+  }, [activeTab, searchTerm]);
 
   useEffect(() => {
     fetchKycList();
@@ -365,6 +381,32 @@ export const AdminKycList: React.FC = () => {
       setActionError(msg);
     } finally {
       setIsSubmittingAction(false);
+    }
+  };
+
+  // Action: Delete Customer (safe — backend checks for active financial records)
+  const handleConfirmDelete = async () => {
+    if (!deleteCustomer) return;
+    try {
+      setIsDeletingCustomer(true);
+      setActionError(null);
+
+      await apiClient.delete(API_ENDPOINTS.CUSTOMERS.DELETE(deleteCustomer.id));
+
+      setSuccessMessage(`Customer "${deleteCustomer.fullName}" has been permanently deleted.`);
+      const deleted = deleteCustomer;
+      setDeleteCustomer(null);
+      if (activeDrawerCustomer?.id === deleted.id) {
+        setActiveDrawerCustomer(null);
+      }
+      fetchKycList(true);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Failed to delete customer record';
+      setActionError(msg);
+    } finally {
+      setIsDeletingCustomer(false);
     }
   };
 
@@ -839,7 +881,25 @@ export const AdminKycList: React.FC = () => {
                             Correction
                           </Button>
                         )}
+
+                        {/* Delete Customer Button */}
+                        {canDelete && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setDeleteCustomer(c);
+                              setActionError(null);
+                            }}
+                            title="Permanently delete this customer record"
+                            className="h-9 px-3 text-xs bg-red-900/20 border-red-700/40 text-red-400 hover:bg-red-900/40 hover:text-red-300 rounded-xl font-medium"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
+                            Delete
+                          </Button>
+                        )}
                       </div>
+
                     </td>
                   </tr>
                 ))}
@@ -1304,13 +1364,31 @@ export const AdminKycList: React.FC = () => {
 
             {/* Bottom Action Footer */}
             <div className="p-4 border-t border-border bg-surface-elevated flex items-center justify-between">
-              <Button
-                variant="outline"
-                onClick={() => setActiveDrawerCustomer(null)}
-                className="bg-surface border-border text-text-secondary hover:text-text-primary text-xs h-9"
-              >
-                Close Drawer
-              </Button>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setActiveDrawerCustomer(null)}
+                  className="bg-surface border-border text-text-secondary hover:text-text-primary text-xs h-9"
+                >
+                  Close Drawer
+                </Button>
+
+                {canDelete && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setDeleteCustomer(activeDrawerCustomer);
+                      setActionError(null);
+                    }}
+                    title="Permanently delete this customer record"
+                    className="h-9 px-3 text-xs bg-red-900/20 border-red-700/40 text-red-400 hover:bg-red-900/40 hover:text-red-300 font-medium"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    Delete Record
+                  </Button>
+                )}
+              </div>
 
               <div className="flex items-center space-x-2">
                 {canCorrection && (
@@ -1799,6 +1877,81 @@ export const AdminKycList: React.FC = () => {
                 className="bg-surface-elevated border-border text-text-secondary text-xs h-9"
               >
                 Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+      {/* ========================================================================= */}
+      {/* DELETE CUSTOMER CONFIRMATION MODAL                                        */}
+      {/* ========================================================================= */}
+      {deleteCustomer && (
+        <Dialog open={!!deleteCustomer} onOpenChange={(open) => !open && setDeleteCustomer(null)}>
+          <DialogContent className="bg-surface border-border text-text-primary max-w-md">
+            <DialogHeader>
+              <div className="flex items-center space-x-2">
+                <Trash2 className="w-5 h-5 text-danger" />
+                <DialogTitle className="text-base font-bold text-text-primary">Delete Customer Record?</DialogTitle>
+              </div>
+              <DialogDescription className="text-xs text-text-secondary">
+                This action is permanent and cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            {actionError && (
+              <div className="p-3 rounded-lg bg-danger/10 border border-danger/30 text-danger text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
+
+            <div className="space-y-3 py-2 text-xs">
+              <div className="p-3 bg-surface-elevated rounded-xl border border-border space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Customer Name:</span>
+                  <span className="font-bold text-text-primary">{deleteCustomer.fullName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Mobile:</span>
+                  <span className="font-mono text-text-primary">+91 {deleteCustomer.mobile}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Email:</span>
+                  <span className="text-text-primary truncate max-w-[200px]">{deleteCustomer.email}</span>
+                </div>
+                {deleteCustomer.applicationId && (
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">Application ID:</span>
+                    <span className="font-mono text-text-primary">{deleteCustomer.applicationId}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-700/40 text-red-300 text-xs flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
+                <span>
+                  This will permanently delete the customer and all associated KYC, document, and application records.
+                  Customers with approved loans or verified payments cannot be deleted.
+                </span>
+              </div>
+            </div>
+
+            <DialogFooter className="flex space-x-2 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => { setDeleteCustomer(null); setActionError(null); }}
+                className="bg-surface-elevated border-border text-text-secondary text-xs h-9"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeletingCustomer}
+                className="bg-red-700 hover:bg-red-800 text-white font-bold text-xs h-9 px-4 disabled:opacity-50"
+              >
+                {isDeletingCustomer ? 'Deleting...' : 'Delete Permanently'}
               </Button>
             </DialogFooter>
           </DialogContent>
