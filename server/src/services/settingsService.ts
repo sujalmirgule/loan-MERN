@@ -452,7 +452,7 @@ export class SettingsService {
     return {
       id: settings.id,
       provider: settings.provider || process.env.WHATSAPP_PROVIDER || 'WABRIDGE',
-      phoneNumber: settings.phoneNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919046833151',
+      phoneNumber: settings.phoneNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919876543210',
       phoneNumberId: settings.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '1032424393284050',
       businessAccountId: settings.businessAccountId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '69b16310667cead707b893e1',
       apiEndpoint: settings.apiEndpoint || process.env.WHATSAPP_API_URL || '',

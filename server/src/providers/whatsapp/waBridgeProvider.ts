@@ -23,7 +23,7 @@ export class WaBridgeWhatsAppProvider implements WhatsAppProvider {
       deviceId: customConfig?.deviceId || process.env.WABRIDGE_DEVICE_ID || '69b16310667cead707b893e1',
       phoneNumberId: customConfig?.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '1032424393284050',
       wabaId: customConfig?.wabaId || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '946428907892164',
-      senderNumber: customConfig?.senderNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919046833151',
+      senderNumber: customConfig?.senderNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919876543210',
     };
   }
 

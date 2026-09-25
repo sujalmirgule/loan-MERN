@@ -115,7 +115,7 @@ export class WhatsAppService {
           deviceId: dbSettings?.businessAccountId || process.env.WABRIDGE_DEVICE_ID || '69b16310667cead707b893e1',
           phoneNumberId: effectivePhoneId,
           wabaId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '946428907892164',
-          senderNumber: dbSettings?.phoneNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919046833151',
+          senderNumber: dbSettings?.phoneNumber || process.env.WHATSAPP_PHONE_NUMBER || '+919876543210',
         });
       }
       return;
