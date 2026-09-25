@@ -102,7 +102,6 @@ export const AdminKycList: React.FC = () => {
   const canVerify = hasPermission('kyc.verify');
   const canReject = hasPermission('kyc.reject');
   const canCorrection = hasPermission('kyc.correction');
-  const canDelete = hasPermission('customers.delete');
 
   // Data & queue state
   const [customers, setCustomers] = useState<KycCustomerItem[]>([]);
@@ -384,31 +383,39 @@ export const AdminKycList: React.FC = () => {
     }
   };
 
-  // Action: Delete Customer (safe — backend checks for active financial records)
+  // Action: Remove KYC Submission ONLY (NOT a customer delete)
+  // Calls DELETE /admin/kyc/:customerId which:
+  //   - Deletes only KYC identity documents (AADHAAR_FRONT, AADHAAR_BACK, PAN)
+  //   - Resets kycStatus to PENDING
+  //   - Sends a re-submit notification to the customer
+  //   - Does NOT touch the customer account, loans, charges, payments, invoices
   const handleConfirmDelete = async () => {
     if (!deleteCustomer) return;
     try {
       setIsDeletingCustomer(true);
       setActionError(null);
 
-      await apiClient.delete(API_ENDPOINTS.CUSTOMERS.DELETE(deleteCustomer.id));
+      await apiClient.delete(API_ENDPOINTS.ADMIN.KYC_RESET(deleteCustomer.id));
 
-      setSuccessMessage(`Customer "${deleteCustomer.fullName}" has been permanently deleted.`);
-      const deleted = deleteCustomer;
+      setSuccessMessage(
+        `KYC submission removed for "${deleteCustomer.fullName}". Customer account is intact. Customer can re-submit KYC.`
+      );
+      const removed = deleteCustomer;
       setDeleteCustomer(null);
-      if (activeDrawerCustomer?.id === deleted.id) {
+      if (activeDrawerCustomer?.id === removed.id) {
         setActiveDrawerCustomer(null);
       }
       fetchKycList(true);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-        'Failed to delete customer record';
+        'Failed to remove KYC submission';
       setActionError(msg);
     } finally {
       setIsDeletingCustomer(false);
     }
   };
+
 
   // Action: Document-Level Review (Approve, Reject, Re-upload)
   const handleConfirmDocAction = async () => {
@@ -882,8 +889,8 @@ export const AdminKycList: React.FC = () => {
                           </Button>
                         )}
 
-                        {/* Delete Customer Button */}
-                        {canDelete && (
+                        {/* Remove KYC Submission Button */}
+                        {canVerify && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -891,11 +898,11 @@ export const AdminKycList: React.FC = () => {
                               setDeleteCustomer(c);
                               setActionError(null);
                             }}
-                            title="Permanently delete this customer record"
-                            className="h-9 px-3 text-xs bg-red-900/20 border-red-700/40 text-red-400 hover:bg-red-900/40 hover:text-red-300 rounded-xl font-medium"
+                            title="Remove/reset this KYC submission (Customer account remains intact)"
+                            className="h-9 px-3 text-xs bg-amber-900/20 border-amber-700/40 text-amber-400 hover:bg-amber-900/40 hover:text-amber-300 rounded-xl font-medium"
                           >
                             <Trash2 className="w-3.5 h-3.5 mr-1" />
-                            Delete
+                            Remove KYC
                           </Button>
                         )}
                       </div>
@@ -1373,7 +1380,7 @@ export const AdminKycList: React.FC = () => {
                   Close Drawer
                 </Button>
 
-                {canDelete && (
+                {canVerify && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -1381,11 +1388,11 @@ export const AdminKycList: React.FC = () => {
                       setDeleteCustomer(activeDrawerCustomer);
                       setActionError(null);
                     }}
-                    title="Permanently delete this customer record"
-                    className="h-9 px-3 text-xs bg-red-900/20 border-red-700/40 text-red-400 hover:bg-red-900/40 hover:text-red-300 font-medium"
+                    title="Remove/reset this KYC submission (Customer account remains intact)"
+                    className="h-9 px-3 text-xs bg-amber-900/20 border-amber-700/40 text-amber-400 hover:bg-amber-900/40 hover:text-amber-300 font-medium"
                   >
                     <Trash2 className="w-3.5 h-3.5 mr-1" />
-                    Delete Record
+                    Remove KYC Submission
                   </Button>
                 )}
               </div>
@@ -1890,11 +1897,12 @@ export const AdminKycList: React.FC = () => {
           <DialogContent className="bg-surface border-border text-text-primary max-w-md">
             <DialogHeader>
               <div className="flex items-center space-x-2">
-                <Trash2 className="w-5 h-5 text-danger" />
-                <DialogTitle className="text-base font-bold text-text-primary">Delete Customer Record?</DialogTitle>
+                <Trash2 className="w-5 h-5 text-warning" />
+                <DialogTitle className="text-base font-bold text-text-primary">Remove KYC Submission?</DialogTitle>
               </div>
               <DialogDescription className="text-xs text-text-secondary">
-                This action is permanent and cannot be undone.
+                This will remove only the KYC submission from the verification queue.
+                The customer account and all other data will remain intact.
               </DialogDescription>
             </DialogHeader>
 
@@ -1908,7 +1916,7 @@ export const AdminKycList: React.FC = () => {
             <div className="space-y-3 py-2 text-xs">
               <div className="p-3 bg-surface-elevated rounded-xl border border-border space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-text-secondary">Customer Name:</span>
+                  <span className="text-text-secondary">Customer:</span>
                   <span className="font-bold text-text-primary">{deleteCustomer.fullName}</span>
                 </div>
                 <div className="flex justify-between">
@@ -1916,24 +1924,39 @@ export const AdminKycList: React.FC = () => {
                   <span className="font-mono text-text-primary">+91 {deleteCustomer.mobile}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary">Email:</span>
-                  <span className="text-text-primary truncate max-w-[200px]">{deleteCustomer.email}</span>
+                  <span className="text-text-secondary">KYC Status:</span>
+                  <span className="font-mono text-text-primary">{deleteCustomer.kycStatus}</span>
                 </div>
-                {deleteCustomer.applicationId && (
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">Application ID:</span>
-                    <span className="font-mono text-text-primary">{deleteCustomer.applicationId}</span>
-                  </div>
-                )}
               </div>
 
-              <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-700/40 text-red-300 text-xs flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-                <span>
-                  This will permanently delete the customer and all associated KYC, document, and application records.
-                  Customers with approved loans or verified payments cannot be deleted.
-                </span>
+              {/* What WILL be removed */}
+              <div className="p-2.5 rounded-lg bg-red-950/30 border border-red-800/40 text-red-300 text-xs space-y-1">
+                <div className="font-semibold text-red-200 flex items-center gap-1.5 mb-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> What will be removed:
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 ml-1">
+                  <li>KYC identity documents (Aadhaar, PAN)</li>
+                  <li>KYC verification status (reset to Pending)</li>
+                </ul>
               </div>
+
+              {/* What will NOT be affected */}
+              <div className="p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-800/40 text-emerald-300 text-xs space-y-1">
+                <div className="font-semibold text-emerald-200 flex items-center gap-1.5 mb-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> What will NOT be affected:
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 ml-1">
+                  <li>Customer account &amp; login</li>
+                  <li>Loan application(s)</li>
+                  <li>Charges &amp; payments</li>
+                  <li>Invoices &amp; agreements</li>
+                  <li>Non-KYC documents</li>
+                </ul>
+              </div>
+
+              <p className="text-text-secondary text-xs text-center pt-1">
+                After removal, the customer will be notified to re-submit KYC documents.
+              </p>
             </div>
 
             <DialogFooter className="flex space-x-2 justify-end">
@@ -1949,14 +1972,15 @@ export const AdminKycList: React.FC = () => {
                 type="button"
                 onClick={handleConfirmDelete}
                 disabled={isDeletingCustomer}
-                className="bg-red-700 hover:bg-red-800 text-white font-bold text-xs h-9 px-4 disabled:opacity-50"
+                className="bg-warning/90 hover:bg-warning text-white font-bold text-xs h-9 px-4 disabled:opacity-50"
               >
-                {isDeletingCustomer ? 'Deleting...' : 'Delete Permanently'}
+                {isDeletingCustomer ? 'Removing KYC...' : 'Remove KYC Submission'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
+
     </div>
   );
 };

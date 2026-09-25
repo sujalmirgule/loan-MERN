@@ -1,4 +1,4 @@
-import { prisma } from './db';
+﻿import { prisma } from './db';
 import { AppError } from '../middleware/errorHandler';
 import { auditService } from './auditService';
 import { DocumentType } from '../validators/documentValidators';
@@ -1073,6 +1073,75 @@ export const adminKycService = {
     return {
       customerId: customer.id,
       kycStatus: finalKycStatus,
+    };
+  },
+
+  /**
+   * DELETE /api/admin/kyc/:customerId
+   *
+   * KYC-ONLY reset. Removes the KYC submission from the verification queue by:
+   *   1. Deleting KYC identity documents (AADHAAR_FRONT, AADHAAR_BACK, PAN) only.
+   *   2. Resetting kycStatus to PENDING on the Customer record.
+   *   3. Sending a re-submit KYC notification to the customer.
+   *
+   * DOES NOT delete the customer, loans, charges, payments, invoices, or any other data.
+   */
+  async resetKycSubmission(
+    customerId: string,
+    actor: { id: string; fullName: string },
+    ipAddress?: string
+  ) {
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId, isDeleted: false },
+      select: { id: true, fullName: true, kycStatus: true },
+    });
+
+    if (!customer) {
+      throw new AppError(404, 'Customer not found');
+    }
+
+    const kycDocumentTypes = ['AADHAAR_FRONT', 'AADHAAR_BACK', 'PAN'];
+
+    await prisma.$transaction(async (tx) => {
+      await tx.loanDocument.deleteMany({
+        where: { customerId, documentType: { in: kycDocumentTypes } },
+      });
+      await tx.customer.update({
+        where: { id: customerId },
+        data: { kycStatus: 'PENDING' },
+      });
+    });
+
+    try {
+      await prisma.notification.create({
+        data: {
+          recipientType: 'CUSTOMER',
+          customerId,
+          title: 'KYC Verification Required',
+          message: `Dear ${customer.fullName}, your KYC submission has been removed by the admin. Please re-submit your KYC documents to continue the verification process.`,
+          eventType: 'KYC_STATUS',
+        },
+      });
+    } catch {
+      // Non-blocking
+    }
+
+    await auditService.record({
+      actorType: 'ADMIN',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      action: 'KYC_SUBMISSION_RESET',
+      entity: 'Customer',
+      entityId: customerId,
+      previousValue: { kycStatus: customer.kycStatus },
+      newValue: { kycStatus: 'PENDING', note: 'KYC documents deleted and status reset. Customer account preserved.' },
+      ipAddress,
+    });
+
+    return {
+      customerId: customer.id,
+      kycStatus: 'PENDING',
+      message: 'KYC submission removed. Customer account is intact. Customer can re-submit KYC.',
     };
   },
 };

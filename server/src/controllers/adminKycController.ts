@@ -207,4 +207,37 @@ export const adminKycController = {
       next(err);
     }
   },
+
+  /**
+   * DELETE /api/admin/kyc/:customerId
+   *
+   * KYC-ONLY reset/removal.
+   * Deletes only the customer's KYC identity documents and resets kycStatus to PENDING.
+   * Does NOT delete the customer, loans, charges, payments, invoices, or any other data.
+   * Sends a notification to the customer to re-submit KYC.
+   */
+  async resetKyc(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user || req.user.role !== 'ADMIN') {
+        throw new AppError(403, 'Requires ADMIN privileges');
+      }
+
+      const customerId = String(req.params.customerId);
+      const ipAddress = req.ip || req.socket.remoteAddress;
+
+      const result = await adminKycService.resetKycSubmission(
+        customerId,
+        { id: req.user.id, fullName: req.user.fullName },
+        ipAddress
+      );
+
+      res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
 };

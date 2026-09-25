@@ -71,6 +71,8 @@ router.post('/kyc/documents/:documentId/review', requirePermission('kyc.verify')
 router.get('/kyc/documents/:documentId/file', requirePermission('kyc.view'), adminKycController.streamDocumentFile);
 router.post('/kyc/:customerId/request-document', requirePermission('kyc.correction'), adminKycController.requestAdditionalDocument);
 router.post('/kyc/:customerId/decision', requirePermission(['kyc.verify', 'kyc.reject']), adminKycController.overrideKycDecision);
+// KYC-ONLY reset: removes KYC docs and resets status to PENDING. Does NOT delete the customer.
+router.delete('/kyc/:customerId', requirePermission('kyc.verify'), adminKycController.resetKyc);
 
 // --- Loan Application Management Endpoints ---
 router.get('/loan-applications', requirePermission('applications.view'), loanApplicationController.getAdminApplications);
