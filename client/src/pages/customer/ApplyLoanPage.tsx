@@ -244,134 +244,273 @@ export const ApplyLoanPage: React.FC = () => {
     );
   }
 
+  const watchedTenure = watch('tenureMonths') || 12;
+
+  // Calculate estimated EMI for live preview
+  const numAmount = Number(watchedAmount);
+  const numTenure = Number(watchedTenure);
+  let estimatedEmi = 0;
+  if (!isNaN(numAmount) && numAmount > 0 && !isNaN(numTenure) && numTenure > 0) {
+    const r = 12 / 12 / 100; // 12% p.a. default interest rate
+    estimatedEmi = Math.round((numAmount * r * Math.pow(1 + r, numTenure)) / (Math.pow(1 + r, numTenure) - 1));
+  }
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center space-x-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate('/customer/loans')}
-          className="text-text-secondary hover:text-text-primary p-2"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          Back to Applications
-        </Button>
+    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 py-4 sm:py-6 px-2 sm:px-4 text-[#0F172A]">
+      {/* Top Header / Back Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#D7E3F5]">
+        <div className="flex items-start gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/customer/loans')}
+            className="bg-white border-[#D7E3F5] text-[#0B1220] hover:bg-[#F4F8FF] text-xs h-10 px-3 rounded-xl font-bold shrink-0 mt-0.5"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1 text-[#155EEF]" />
+            Back
+          </Button>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-[#EFF6FF] text-[#155EEF] border border-[#D7E3F5]">
+                Loan Application Step
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black text-[#07152F] tracking-tight">
+              ENTER REQUIRED LOAN AMOUNT
+            </h1>
+            <p className="text-xs sm:text-sm text-[#64748B] mt-0.5 font-medium">
+              Specify your required loan amount, repayment tenure, and purpose.
+            </p>
+          </div>
+        </div>
       </div>
 
-      <Card className="shadow-sm border-border bg-surface">
-        <CardHeader>
-          <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold">
-              <Landmark className="w-5 h-5" />
+      {/* Main Form Container */}
+      <Card className="shadow-lg border-[#D7E3F5] bg-white rounded-3xl overflow-hidden">
+        <CardHeader className="p-6 sm:p-8 bg-[#F4F8FF] border-b border-[#D7E3F5]">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-white border border-[#D7E3F5] text-[#155EEF] flex items-center justify-center font-black shadow-xs shrink-0">
+              <Landmark className="w-7 h-7" />
             </div>
             <div>
-              <CardTitle className="text-xl">Apply for a New Loan</CardTitle>
-              <CardDescription>
-                Provide your loan requirements. Financial terms and decisions will be reviewed by our underwriters.
+              <CardTitle className="text-xl sm:text-2xl font-black text-[#07152F]">
+                Loan Requirement Details
+              </CardTitle>
+              <CardDescription className="text-xs sm:text-sm text-[#64748B] mt-0.5 font-medium">
+                Enter your exact loan requirement below to proceed with credit processing.
               </CardDescription>
             </div>
           </div>
         </CardHeader>
 
         <form onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="space-y-5">
+          <CardContent className="p-6 sm:p-8 space-y-8">
             {serverError && (
-              <div className="p-3.5 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm flex items-start space-x-2">
-                <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex items-start space-x-3 font-medium">
+                <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                 <span>{serverError}</span>
               </div>
             )}
 
-            {/* Loan Amount */}
-            <div className="space-y-1.5">
-              <Label htmlFor="amount" className="text-sm font-medium text-text-primary">
-                Requested Loan Amount (₹) <span className="text-danger">*</span>
-              </Label>
+            {/* 1. REQUIRED LOAN AMOUNT (PROMINENT INPUT) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="amount" className="text-base sm:text-lg font-black text-[#07152F] flex items-center gap-2">
+                  <span>1. Required Loan Amount (₹)</span>
+                  <span className="text-rose-600">*</span>
+                </Label>
+                <span className="text-xs text-[#64748B] font-bold">Min: ₹10,000 | Max: ₹50,00,000</span>
+              </div>
+
+              {/* Large Input Field */}
               <div className="relative">
-                <span className="absolute left-3 top-2.5 text-text-secondary font-semibold">₹</span>
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl sm:text-3xl font-black text-[#155EEF]">
+                  ₹
+                </div>
                 <Input
                   id="amount"
                   type="number"
                   step="any"
-                  placeholder="e.g. 100000"
-                  className="pl-7 text-base font-medium bg-surface-elevated border-border text-text-primary"
+                  placeholder="e.g. 150000"
+                  className="pl-11 sm:pl-14 text-2xl sm:text-3xl font-black font-mono text-[#07152F] bg-[#F4F8FF] border-[#D7E3F5] h-16 sm:h-20 rounded-2xl focus:border-[#155EEF] focus:bg-white transition-all shadow-xs"
                   disabled={isSubmitting}
                   {...register('amount')}
                 />
               </div>
-              {watchedAmount && !isNaN(Number(watchedAmount)) && Number(watchedAmount) > 0 && (
-                <p className="text-xs text-primary font-medium">
-                  Applying for: ₹{Number(watchedAmount).toLocaleString('en-IN')}
-                </p>
+
+              {/* Preset Amount Chips */}
+              <div className="flex items-center gap-2 overflow-x-auto pt-1 pb-1 scrollbar-none">
+                <span className="text-xs text-[#64748B] font-bold shrink-0 mr-1">Quick Select:</span>
+                {[50000, 100000, 200000, 500000, 1000000].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById('amount') as HTMLInputElement;
+                      if (el) {
+                        el.value = String(preset);
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                      }
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#EFF6FF] border border-[#D7E3F5] text-[#155EEF] hover:bg-[#155EEF] hover:text-white transition-all whitespace-nowrap"
+                  >
+                    ₹{preset.toLocaleString('en-IN')}
+                  </button>
+                ))}
+              </div>
+
+              {/* Formatted Amount Preview Banner */}
+              {numAmount > 0 && !isNaN(numAmount) && (
+                <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#D7E3F5] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+                  <div>
+                    <span className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider block">
+                      Amount Requested
+                    </span>
+                    <span className="text-xl sm:text-2xl font-black text-[#155EEF] font-mono block mt-0.5">
+                      ₹{numAmount.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <span className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider block">
+                      Amount in Words
+                    </span>
+                    <span className="text-xs sm:text-sm font-extrabold text-[#07152F] block mt-0.5">
+                      {numberToWords(numAmount)}
+                    </span>
+                  </div>
+                </div>
               )}
+
               {errors.amount && (
-                <p className="text-xs text-danger">{errors.amount.message}</p>
+                <p className="text-xs sm:text-sm font-bold text-rose-600 flex items-center gap-1.5 mt-1">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errors.amount.message}</span>
+                </p>
               )}
             </div>
 
-            {/* Tenure */}
-            <div className="space-y-1.5">
-              <Label htmlFor="tenureMonths" className="text-sm font-medium text-text-primary">
-                Repayment Tenure (in Months) <span className="text-danger">*</span>
-              </Label>
+            {/* 2. REPAYMENT TENURE (MONTHS) */}
+            <div className="space-y-3 pt-2 border-t border-[#D7E3F5]">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="tenureMonths" className="text-base sm:text-lg font-black text-[#07152F] flex items-center gap-2">
+                  <span>2. Repayment Tenure (Months)</span>
+                  <span className="text-rose-600">*</span>
+                </Label>
+                <span className="text-xs text-[#64748B] font-bold">Standard 6 - 84 Months</span>
+              </div>
+
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {[6, 12, 24, 36, 48, 60].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById('tenureMonths') as HTMLInputElement;
+                      if (el) {
+                        el.value = String(m);
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                      }
+                    }}
+                    className={`p-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                      numTenure === m
+                        ? 'bg-[#155EEF] text-white border-[#155EEF] shadow-xs'
+                        : 'bg-[#F4F8FF] border-[#D7E3F5] text-[#07152F] hover:bg-[#EFF6FF]'
+                    }`}
+                  >
+                    {m} Months
+                  </button>
+                ))}
+              </div>
+
               <Input
                 id="tenureMonths"
                 type="number"
-                placeholder="e.g. 12, 24, 36"
-                className="bg-surface-elevated border-border text-text-primary"
+                placeholder="Custom months (e.g. 12, 18, 24)"
+                className="text-base font-bold text-[#07152F] bg-[#F4F8FF] border-[#D7E3F5] h-12 rounded-xl focus:border-[#155EEF] focus:bg-white"
                 disabled={isSubmitting}
                 {...register('tenureMonths')}
               />
-              <p className="text-xs text-text-secondary">
-                Specify duration in whole months (e.g. 12 months = 1 year).
-              </p>
+
               {errors.tenureMonths && (
-                <p className="text-xs text-danger">{errors.tenureMonths.message}</p>
+                <p className="text-xs sm:text-sm font-bold text-rose-600 flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errors.tenureMonths.message}</span>
+                </p>
+              )}
+
+              {/* Estimated EMI Summary Box */}
+              {estimatedEmi > 0 && (
+                <div className="p-4 rounded-2xl bg-[#F8FAFF] border border-[#D7E3F5] flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider block">
+                      Estimated Monthly Installment (EMI)
+                    </span>
+                    <span className="text-xs text-[#64748B] mt-0.5">Calculated at standard 12% p.a. interest</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xl font-black text-[#16A34A] font-mono">
+                      ₹{estimatedEmi.toLocaleString('en-IN')}/mo
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* Purpose */}
-            <div className="space-y-1.5">
+            {/* 3. PURPOSE OF LOAN */}
+            <div className="space-y-3 pt-2 border-t border-[#D7E3F5]">
               <div className="flex justify-between items-center">
-                <Label htmlFor="purpose" className="text-sm font-medium text-text-primary">
-                  Purpose of Loan <span className="text-danger">*</span>
+                <Label htmlFor="purpose" className="text-base sm:text-lg font-black text-[#07152F] flex items-center gap-2">
+                  <span>3. Purpose of Loan</span>
+                  <span className="text-rose-600">*</span>
                 </Label>
-                <span className="text-[11px] text-text-secondary">
-                  {watchedPurpose.length} / 500
+                <span className="text-xs text-[#64748B] font-medium">
+                  {watchedPurpose.length} / 500 characters
                 </span>
               </div>
               <textarea
                 id="purpose"
-                rows={3}
-                placeholder="Briefly state the intended purpose of this loan (e.g., Higher education, home repairs, medical expenses)"
-                className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-text-primary ring-offset-background placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all resize-none"
+                rows={4}
+                placeholder="State the intended purpose of this loan (e.g., Home renovation, medical emergency, business expansion, personal expenses)"
+                className="w-full rounded-2xl border border-[#D7E3F5] bg-[#F4F8FF] p-4 text-sm sm:text-base font-medium text-[#07152F] placeholder-[#64748B] focus:outline-none focus:border-[#155EEF] focus:bg-white transition-all resize-none shadow-xs"
                 disabled={isSubmitting}
                 {...register('purpose')}
               />
               {errors.purpose && (
-                <p className="text-xs text-danger">{errors.purpose.message}</p>
+                <p className="text-xs sm:text-sm font-bold text-rose-600 flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errors.purpose.message}</span>
+                </p>
               )}
             </div>
           </CardContent>
 
-          <CardFooter className="flex justify-between border-t border-border pt-4">
-            <Link to="/customer/loans">
-              <Button type="button" variant="outline" className="border-border text-text-primary" disabled={isSubmitting}>
+          {/* Form Actions Footer */}
+          <CardFooter className="p-6 sm:p-8 bg-[#F4F8FF] border-t border-[#D7E3F5] flex flex-col sm:flex-row justify-between items-center gap-3">
+            <Link to="/customer/loans" className="w-full sm:w-auto">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto h-12 px-6 border-[#D7E3F5] text-[#07152F] hover:bg-white font-bold text-xs sm:text-sm rounded-xl"
+                disabled={isSubmitting}
+              >
                 Cancel
               </Button>
             </Link>
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="bg-success text-background hover:brightness-110 text-text-primary min-w-[140px]"
+              className="w-full sm:w-auto h-14 sm:h-16 px-8 sm:px-12 bg-[#155EEF] hover:bg-[#1149B8] text-white font-extrabold text-base sm:text-lg rounded-2xl shadow-xl shadow-[#155EEF]/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Submitting...
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Submitting Loan Application...</span>
                 </>
               ) : (
-                'Submit Application'
+                <>
+                  <span>Submit Loan Application</span>
+                  <ArrowRight className="w-5 h-5 ml-1" />
+                </>
               )}
             </Button>
           </CardFooter>
@@ -380,3 +519,26 @@ export const ApplyLoanPage: React.FC = () => {
     </div>
   );
 };
+
+function numberToWords(num: number): string {
+  if (!num || isNaN(num) || num <= 0) return '';
+  const a = [
+    '', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ',
+    'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '
+  ];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function inWords(n: number): string {
+    if (n === 0) return '';
+    if (n < 20) return a[n];
+    if (n < 100) return b[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + a[n % 10] : ' ');
+    if (n < 1000) return a[Math.floor(n / 100)] + 'Hundred ' + (n % 100 !== 0 ? 'and ' + inWords(n % 100) : '');
+    if (n < 100000) return inWords(Math.floor(n / 1000)) + 'Thousand ' + (n % 1000 !== 0 ? inWords(n % 1000) : '');
+    if (n < 10000000) return inWords(Math.floor(n / 100000)) + 'Lakh ' + (n % 100000 !== 0 ? inWords(n % 100000) : '');
+    return inWords(Math.floor(n / 10000000)) + 'Crore ' + (n % 10000000 !== 0 ? inWords(n % 10000000) : '');
+  }
+
+  const rounded = Math.round(num);
+  const words = inWords(rounded).trim();
+  return (words ? words : 'Zero') + ' Rupees Only';
+}

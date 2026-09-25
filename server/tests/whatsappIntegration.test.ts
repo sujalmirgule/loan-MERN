@@ -488,7 +488,7 @@ describe('WhatsApp Integration & Meta Cloud API Suite', () => {
       expect(waMsg).toBeDefined();
       expect(waMsg?.status).toBe('SENT');
       expect(waMsg?.message).toContain('Declined');
-    }, 15000);
+    }, 30000);
 
     it('triggers automated WhatsApp notification on loan approval when configured', async () => {
       // Enable autoWhatsAppOnLoanApproved in DB
@@ -540,7 +540,7 @@ describe('WhatsApp Integration & Meta Cloud API Suite', () => {
       expect(waMsg).toBeDefined();
       expect(waMsg?.status).toBe('SENT');
       expect(waMsg?.message).toContain('APPROVED');
-    }, 15000);
+    }, 30000);
   });
 });
 

@@ -111,8 +111,7 @@ export const AdminChargesApprovalPage: React.FC = () => {
       const isPaid = p.status === 'PAID' || p.status === 'SUCCESS';
       const isRejected = p.status === 'REJECTED' || p.status === 'FAILED';
 
-      // Extract chargeId from notes if encoded as "Specific Charge: Name (chargeId)"
-      let extractedChargeId = p.chargeId || p.id;
+      let extractedChargeId = p.chargeId || '';
       let chargeTitle = p.chargeType || 'Specific Charge';
 
       if (p.notes && p.notes.includes('Specific Charge:')) {
@@ -141,10 +140,10 @@ export const AdminChargesApprovalPage: React.FC = () => {
       else if (isRejected) verificationStatus = 'Rejected';
       else if (!hasUtr) verificationStatus = 'Not Submitted';
 
-      const key = `${extractedChargeId || p.id}`;
+      const key = `p-${p.id}`;
       itemsMap.set(key, {
         id: p.id,
-        chargeId: extractedChargeId,
+        chargeId: extractedChargeId || p.id,
         paymentId: p.id,
         customerName: p.customerName || 'Customer',
         customerMobile: p.mobile || '',
@@ -262,17 +261,18 @@ export const AdminChargesApprovalPage: React.FC = () => {
   // Verification Mutation using existing backend endpoint: /admin/charges/specific/:id/verify-payment
   const verifyMutation = useMutation({
     mutationFn: async (item: ChargeApprovalItem) => {
-      // Attempt specific charge verification first
-      try {
-        const res = await apiClient.post(API_ENDPOINTS.CHARGES.SPECIFIC.VERIFY_PAYMENT(item.chargeId), {});
-        return res.data;
-      } catch (err: any) {
-        // Fallback to payment verify endpoint if it was a standalone payment record
-        if (item.paymentId) {
-          return adminService.verifyPayment(item.paymentId, 'Verified via Charges & Fee Approval page');
+      if (item.chargeId && item.chargeId !== item.paymentId) {
+        try {
+          const res = await apiClient.post(API_ENDPOINTS.CHARGES.SPECIFIC.VERIFY_PAYMENT(item.chargeId), {});
+          return res.data;
+        } catch {
+          // Fallback to standalone payment verification if specific charge endpoint returns error
         }
-        throw err;
       }
+      if (item.paymentId) {
+        return adminService.verifyPayment(item.paymentId, 'Verified via Charges & Fee Approval page');
+      }
+      throw new Error('No charge or payment ID found for verification.');
     },
     onSuccess: () => {
       setActionSuccess('Payment verified successfully! Status is now PAID and charge-specific invoice is available.');

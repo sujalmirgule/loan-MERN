@@ -1184,6 +1184,7 @@ export class SpecificChargesService {
           receiptNumber: receiptNum,
           status: 'UNDER_VERIFICATION',
           notes: `Specific Charge: ${charge.name} (${charge.id}) - ${input.notes || ''}`,
+          chargeId: charge.id,
         },
       });
     }

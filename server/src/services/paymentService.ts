@@ -720,33 +720,60 @@ export class PaymentService {
         },
       });
 
-      // 2. Update linked Charge to PAID if exists
-      if (payment.chargeId) {
+      // 2. Update ONLY the single linked Charge to PAID
+      let targetChargeId = payment.chargeId;
+      if (targetChargeId) {
         await tx.charge.update({
-          where: { id: payment.chargeId },
+          where: { id: targetChargeId },
           data: {
             status: 'PAID',
             paidAt: now,
           },
         });
+      } else {
+        // Find single charge linked by paymentId or notes
+        const linkedCharge = await tx.charge.findFirst({
+          where: { paymentId: payment.id },
+        });
+        if (linkedCharge) {
+          targetChargeId = linkedCharge.id;
+          await tx.charge.update({
+            where: { id: linkedCharge.id },
+            data: {
+              status: 'PAID',
+              paidAt: now,
+            },
+          });
+        }
       }
 
-      // Check if there is an unlinked charge with this paymentId
-      await tx.charge.updateMany({
-        where: { paymentId: payment.id },
-        data: {
-          status: 'PAID',
-          paidAt: now,
-        },
-      });
-
-      // 3. Update Loan paymentStatus if applicable (Loan approval remains an explicit admin underwriting action)
+      // 3. Update Loan paymentStatus based on remaining pending charges for this loan
       let updatedLoan = null;
       if (loan) {
+        const remainingPendingCharges = await tx.charge.count({
+          where: {
+            loanId: loan.id,
+            status: { in: ['PENDING', 'UNDER_VERIFICATION'] },
+            isActive: true,
+          },
+        });
+
+        const underVerificationCount = await tx.charge.count({
+          where: {
+            loanId: loan.id,
+            status: 'UNDER_VERIFICATION',
+            isActive: true,
+          },
+        });
+
+        const newLoanPaymentStatus = remainingPendingCharges === 0
+          ? 'PAID'
+          : (underVerificationCount > 0 ? 'UNDER_VERIFICATION' : 'PAYMENT_REQUIRED');
+
         updatedLoan = await tx.loanApplication.update({
           where: { id: loan.id },
           data: {
-            paymentStatus: 'PAID',
+            paymentStatus: newLoanPaymentStatus,
           },
         });
       }

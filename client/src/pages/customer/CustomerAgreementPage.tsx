@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
@@ -41,6 +41,7 @@ interface AgreementData {
 }
 
 export const CustomerAgreementPage: React.FC = () => {
+  const navigate = useNavigate();
   const { branding } = useBranding();
   useBrandTitle('Loan Agreement');
   const { loanId, id } = useParams<{ loanId?: string; id?: string }>();
@@ -67,10 +68,13 @@ export const CustomerAgreementPage: React.FC = () => {
       return apiClient.post(API_ENDPOINTS.AGREEMENTS.CUSTOMER_ACCEPT(effectiveLoanId));
     },
     onSuccess: () => {
-      setSuccessMessage('Loan agreement accepted and signed successfully. Your application is now ready for disbursement.');
+      setSuccessMessage('Loan agreement accepted and signed successfully! Redirecting to enter loan amount details...');
       setErrorMessage(null);
       queryClient.invalidateQueries({ queryKey: ['loan-agreement', effectiveLoanId] });
       queryClient.invalidateQueries({ queryKey: ['customer-dashboard'] });
+      setTimeout(() => {
+        navigate('/customer/apply');
+      }, 1200);
     },
     onError: (err: Error) => {
       setErrorMessage(err.message || 'Failed to sign loan agreement. Please retry.');

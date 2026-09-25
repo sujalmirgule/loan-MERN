@@ -9,8 +9,11 @@ describe('Loan Documents -> Apply for Loan -> Admin Underwriting End-to-End Suit
   let adminToken: string;
 
   beforeEach(async () => {
-    // Ensure admin user
-    let admin = await prisma.adminUser.findFirst();
+    // Ensure active admin user
+    let admin = await prisma.adminUser.findFirst({ where: { isActive: true, email: 'admin@loanapprove.com' } });
+    if (!admin) {
+      admin = await prisma.adminUser.findFirst({ where: { isActive: true } });
+    }
     if (!admin) {
       admin = await prisma.adminUser.create({
         data: {
