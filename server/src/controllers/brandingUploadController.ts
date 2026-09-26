@@ -7,11 +7,6 @@ import { storageProvider } from '../providers/storage';
 
 const BRANDING_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'branding');
 
-// Ensure the branding uploads directory exists for local static serving fallback
-if (!fs.existsSync(BRANDING_UPLOAD_DIR)) {
-  fs.mkdirSync(BRANDING_UPLOAD_DIR, { recursive: true });
-}
-
 function getPublicUrl(req: Request, filename: string): string {
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.headers['x-forwarded-host'] || req.get('host') || 'localhost';
@@ -35,9 +30,16 @@ async function saveBrandingFile(req: Request, filePrefix: string): Promise<strin
     return `${stored.filePath}?v=${timestamp}`;
   }
 
-  const localFilepath = path.join(BRANDING_UPLOAD_DIR, filename);
-  if (!fs.existsSync(localFilepath)) {
-    fs.writeFileSync(localFilepath, req.file.buffer);
+  try {
+    if (!fs.existsSync(BRANDING_UPLOAD_DIR)) {
+      fs.mkdirSync(BRANDING_UPLOAD_DIR, { recursive: true });
+    }
+    const localFilepath = path.join(BRANDING_UPLOAD_DIR, filename);
+    if (!fs.existsSync(localFilepath)) {
+      fs.writeFileSync(localFilepath, req.file.buffer);
+    }
+  } catch {
+    // Ignore local filesystem copy when using remote storage or read-only runtime
   }
 
   return `${getPublicUrl(req, filename)}?v=${timestamp}`;

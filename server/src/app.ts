@@ -55,12 +55,15 @@ export function createApp(): Express {
     app.use(morgan('dev'));
   }
 
-  // Serve branding assets (logos, favicons) as public static files
+  // Serve branding assets (logos, favicons) as public static files if directory exists locally
   const brandingDir = path.join(process.cwd(), 'uploads', 'branding');
-  if (!fs.existsSync(brandingDir)) {
-    fs.mkdirSync(brandingDir, { recursive: true });
+  try {
+    if (fs.existsSync(brandingDir)) {
+      app.use('/uploads/branding', express.static(brandingDir, { maxAge: '1d' }));
+    }
+  } catch {
+    // Ignore static serving setup errors in read-only serverless environments
   }
-  app.use('/uploads/branding', express.static(brandingDir, { maxAge: '1d' }));
 
   // Root health check endpoint for deployment monitoring
   app.get('/', (req, res) => {

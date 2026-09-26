@@ -13,8 +13,12 @@ export class LocalStorageProvider implements IStorageProvider {
   }
 
   private ensureDirectoryExists(dirPath: string): void {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+    } catch {
+      // Ignore directory creation failure in read-only serverless environments
     }
   }
 
