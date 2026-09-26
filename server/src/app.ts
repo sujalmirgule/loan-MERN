@@ -20,17 +20,19 @@ export function createApp(): Express {
     })
   );
 
-  // CORS configuration (Strict client origin allowed with seamless localhost port support)
+  // CORS configuration (Strict client origin allowed with seamless localhost & Vercel deployment support)
   const allowedOrigins = [config.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174', 'http://localhost:5175', 'http://127.0.0.1:5175'];
   app.use(
     cors({
       origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps, curl, or server-to-server)
         if (!origin) return callback(null, true);
-        if (
-          allowedOrigins.indexOf(origin) !== -1 ||
-          (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
-        ) {
+        const cleanOrigin = origin.replace(/\/$/, '');
+        const isAllowed =
+          allowedOrigins.some((allowed) => allowed && allowed.replace(/\/$/, '') === cleanOrigin) ||
+          (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) ||
+          origin.endsWith('.vercel.app');
+        if (isAllowed) {
           return callback(null, true);
         }
         return callback(new Error(`CORS policy blocked access from origin: ${origin}`));
@@ -60,11 +62,17 @@ export function createApp(): Express {
   }
   app.use('/uploads/branding', express.static(brandingDir, { maxAge: '1d' }));
 
-  // API Routes
+  // Root health check endpoint for deployment monitoring
+  app.get('/', (req, res) => {
+    res.json({ success: true, message: 'Loan Approve API Service' });
+  });
+
+  // API Routes (Mounted at /api and / for maximum serverless router compatibility)
   app.use('/api', apiRouter);
+  app.use('/', apiRouter);
 
   // 404 Route Handler
-  app.use('/api/*', (req, res) => {
+  app.use('*', (req, res) => {
     res.status(404).json({
       success: false,
       message: `API endpoint not found: ${req.method} ${req.originalUrl}`,
