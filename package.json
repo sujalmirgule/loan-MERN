@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "Production-Grade Fintech Loan Management Platform",
+  "workspaces": [
+    "server",
+    "client"
+  ],
   "scripts": {
     "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "npm run dev --prefix server",
