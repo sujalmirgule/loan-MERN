@@ -803,6 +803,36 @@ export const CustomerPaymentPage: React.FC = () => {
                           </button>
                         </div>
 
+                        {/* Pay Now via UPI App Deep-Link */}
+                        {(() => {
+                          const upiId = options?.upi?.primaryUpiId || 'pay@bank';
+                          const merchantName = options?.upi?.merchantName || branding.appName || 'Loan Approval';
+                          const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(merchantName)}&am=${fee}&cu=INR&tn=${encodeURIComponent(feeName || 'Application Fee')}`;
+
+                          return (
+                            <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#D6E4F5] flex flex-col items-center gap-3 text-center">
+                              <a
+                                href={upiUri}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTimeout(() => {
+                                    setHasCompletedPayment(true);
+                                    const utrEl = document.getElementById('utr-verification-section');
+                                    if (utrEl) utrEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                  }, 1200);
+                                }}
+                                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs h-11 px-6 rounded-xl shadow-md transition active:scale-[0.98]"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                                <span>Pay Now via UPI App (GPay / PhonePe / Paytm / BHIM)</span>
+                              </a>
+                              <p className="text-[11px] text-[#64748B]">
+                                On mobile devices: Launches installed UPI application selection. On desktop: Scan QR code below.
+                              </p>
+                            </div>
+                          );
+                        })()}
+
                         {/* QR Code */}
                         <div className="text-center space-y-2 pt-2">
                           <div className="w-44 h-44 mx-auto p-3 rounded-2xl bg-white flex items-center justify-center shadow-md border border-[#D6E4F5]">

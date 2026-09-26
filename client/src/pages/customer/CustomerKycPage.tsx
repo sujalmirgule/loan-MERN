@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { API_ENDPOINTS } from '@/api/endpoints';
@@ -69,6 +69,7 @@ interface CustomerCharge {
 
 export const CustomerKycPage: React.FC = () => {
   useBrandTitle('KYC Verification');
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [activeUploadType, setActiveUploadType] = useState<'AADHAAR_FRONT' | 'AADHAAR_BACK' | null>(null);
@@ -661,8 +662,14 @@ export const CustomerKycPage: React.FC = () => {
                   </div>
                 ) : (
                   <Button
-                    onClick={() => setPayModalOpen(true)}
-                    className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs h-10 px-6 rounded-xl shadow-md flex items-center gap-1.5 transition active:scale-95"
+                    onClick={() => {
+                      if (kycCharge?.id) {
+                        navigate(`/customer/payments?chargeId=${kycCharge.id}`);
+                      } else {
+                        navigate('/customer/payments?charge=kyc');
+                      }
+                    }}
+                    className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs h-10 px-6 rounded-xl shadow-md flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
                   >
                     <CreditCard className="w-4 h-4" />
                     <span>Pay Now</span>

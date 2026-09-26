@@ -38,6 +38,7 @@ export const API_ENDPOINTS = {
     STATUS: '/admin/status',
     KYC_LIST: '/admin/kyc',
     KYC_DETAIL: (id: string) => `/admin/kyc/${id}`,
+    KYC_RESET: (id: string) => `/admin/kyc/${id}`,
     REVIEW_DOCUMENT: (id: string) => `/admin/kyc/documents/${id}/review`,
     DOCUMENT_FILE: (id: string) => `/admin/kyc/documents/${id}/file`,
     REQUEST_DOCUMENT: (id: string) => `/admin/kyc/${id}/request-document`,
